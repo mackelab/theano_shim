@@ -1,0 +1,65 @@
+===========================================
+=         Theano/Numpy shim               =
+=    Copyright (c) 2017 Alexandre René    =
+===========================================
+
+Description
+===========
+A simple convenient exchangeable interface, so we don't need
+conditionals just to select between e.g. T.sum and np.sum.
+More specific calls can be dealt with in the related code by
+conditioning on this module's `use_theano` flag
+
+This module's `lib` attribute will be attached to either theano.tensor
+or numpy, such that calls can be made as `theano_shim.lib.sum`.
+It also provides interchangeable interfaces to common operations,
+such as type casting and checking, assertions and rounding, as well
+as 'shim' datatypes for random number streams and shared variables.
+
+
+Usage
+=====
+At the top of your code, include the line
+`import theano_shim as shim`
+By default this will not even try to load Theano, so you can use it on
+a machine where Theano is not installed.
+To 'switch on' Theano, add the following below the import:
+`shim.use_theano()`
+You can switch it back to its default state with `shim.load(False)`.
+
+
+Development status
+==================
+This is an alpha release, so you should not blindly trust
+the functions in this package.
+More importantly, the functions provide far from complete
+coverage of the Theano/Numpy APIs, so expect to need
+to extend it for your needs (don't forget to share your
+contributions back upstream ! =) ). For this reason, a
+'Development Installation' is the preferred means of
+installing this module, so it doesn't need to be reinstalled
+after every modification.
+
+
+Development installation
+===============================
+
+- Create the virtual environment if required
+
+  python3 -m venv --system-site-packages ~/usr/venv/mackelab
+
+  You can omit --system-site-packages if you install all dependencies (like
+  SciPy) within the virtual environment.
+
+
+- Activate the virtual environment
+
+  source ~/usr/venv/mackelab/bin/activate
+
+
+- cd to the directory containing this file
+
+
+- Install the code in "Development mode"
+
+  pip install -e .

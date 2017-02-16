@@ -1,0 +1,7 @@
+*.ipynb_*
+__pycache__
+*.egg*
+*.pyc
+scratch*
+TMPNOTES
+venv
