@@ -20,5 +20,5 @@ setup(
 
       py_modules=["theano_shim"],
 
-      install_requires=['numpy']
+      install_requires=['numpy', 'scipy']
      )

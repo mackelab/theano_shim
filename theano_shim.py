@@ -173,21 +173,34 @@ def round(x):
         res = round(x)
     return res
 
-def asvariable(x):
+def asvariable(x, dtype=None):
     if use_theano:
         # No `isinstance` here: the point is to cast to variable
-        return T.as_tensor_variable(x)
+        if dtype is not None:
+            return T.cast(T.as_tensor_variable(x), dtype)
+        else:
+            return T.as_tensor_variable(x)
     else:
-        return np.asarray(x)
+        return np.asarray(x, dtype=dtype)
 
-def asarray(x):
+def asarray(x, dtype=None):
     if use_theano and isinstance(x, theano.gof.Variable):
-        return T.as_tensor_variable(x)
+        if dtype is not None:
+            return T.cast(T.as_tensor_variable(x), dtype)
+        else:
+            return T.as_tensor_variable(x)
     else:
-        return np.asarray(x)
+        return np.asarray(x, dtype=dtype)
 
 def isscalar(x):
     return asarray(x).ndim == 0
+
+def flatten(x, outdim):
+    if use_theano and isinstance(x, theano.gof.Variable):
+        return T.flatten(x, outdim)
+    else:
+        outshape = x.shape[:outdim-1] + (np.prod(x.shape[outdim-1:]), )
+        return x.reshape(outshape)
 
 #####################
 # Convenience function for max / min
@@ -231,8 +244,14 @@ class ShimmedRandomStreams:
     def __init__(self, seed=None):
         np.random.seed(seed)
 
-    def normal(self, size=None, avg=0.0, std=1.0, ndim=None, dtype=None):
-        return np.random.normal(loc=avg, scale=std, size=size).astype(dtype)
+    def normal(self, size=(), avg=0.0, std=1.0, ndim=None):
+        return np.random.normal(loc=avg, scale=std, size=size)
+
+    def uniform(self, size=(), low=0.0, high=1.0, ndim=None):
+        return np.random.uniform(low, high, size)
+
+    def binomial(self, size=(), n=1, p=0.5, ndim=None):
+        return np.random.binomial(n, p, size)
 
 if use_theano:
     RandomStreams = theano.tensor.shared_randomstreams.RandomStreams
@@ -250,7 +269,7 @@ else:
 ################################################
 
 ######################
-# Conditionals
+# Logical and comparison operators
 
 def lt(a, b):
     if (use_theano and isinstance(condition, theano.gof.Variable)):
@@ -277,6 +296,26 @@ def eq(a, b):
         return T.eq(a, b)
     else:
         return a == b
+
+def and_(a, b):
+    if (use_theano and (isinstance(a, theano.gof.Variable)
+                        or isinstance(b, theano.gof.Variable))):
+        return T.and_(a, b)
+    else:
+        return np.logical_and(a, b)
+
+def or_(a, b):
+    if (use_theano and (isinstance(a, theano.gof.Variable)
+                        or isinstance(b, theano.gof.Variable))):
+        return T.or_(a, b)
+    else:
+        return np.logical_or(a, b)
+
+
+
+
+######################
+# Conditionals
 
 def ifelse(condition, then_branch, else_branch, name=None):
     if (use_theano and isinstance(condition, theano.gof.Variable)):
@@ -371,46 +410,56 @@ def get_ndims(x):
 # Axis manipulation functions
 # E.g. to treat a scalar as a 1x1 matrix
 
-def add_axes(x, num=1, side='left'):
+def add_axes(x, num=1, pos='left'):
     """
     Add an axis to `x`, e.g. to treat a scalar as a 1x1 matrix.
-    This is meant as a simple function for typical usecases;
+    String arguments for `pos` should cover most typical use cases;
     for more complex operations, like adding axes to the middle,
-    use the Theano or Numpy methods.
+    specify the insertion position for the axes directly.
 
     Parameters
     ----------
     num: int
         Number of axes to add. Default: 1.
-    side: 'before' | 'left' | 'after' | 'right' | 'before last'
+    pos: 'before' | 'left' | 'after' | 'right' | 'before last' | int
         - 'before', 'left' turns a 1D vector into a row vector. (Default)
         - 'after', 'right' turns a 1D vector into a column vector.
         - 'before last' adds axes to the second-last position.
           Equivalent to 'left' on 1D vectors.'.
+        - An integer adds the axes before this position
+            + 0 : equivalent to 'before'
+            + -1 : equivalent to 'before last'
+            + `x.ndim` : equivalent to 'after'
     """
     if use_theano and isinstance(x, theano.gof.Variable):
-        if side in ['left', 'before']:
+        if pos in ['left', 'before']:
             shuffle_pattern = ['x']*num
             shuffle_pattern.extend(range(x.ndim))
-        elif side  in ['right', 'after']:
+        elif pos  in ['right', 'after']:
             shuffle_pattern = list(range(x.ndim))
             shuffle_pattern.extend( ['x']*num )
-        elif side == 'before last':
+        elif pos == 'before last':
             shuffle_pattern = list(range(x.ndim))
             shuffle_pattern = shuffle_pattern[:-1] + ['x']*num + shuffle_pattern[-1:]
         else:
-            raise ValueError("Unrecognized argument `{}` for side.".format(side))
+            try:
+                shuffle_pattern = shuffle_pattern[:pos] + ['x']*num + shuffle_pattern[pos:]
+            except TypeError:
+                raise ValueError("Unrecognized argument `{}` for pos.".format(pos))
         return T.dimsuffle(shuffle_pattern)
     else:
         x = np.asarray(x)
-        if side in ['left', 'before']:
+        if pos in ['left', 'before']:
             return x.reshape( (1,)*num + x.shape )
-        elif side in ['right', 'after']:
+        elif pos in ['right', 'after']:
             return x.reshape( x.shape + (1,)*num )
-        elif side == 'before last':
+        elif pos == 'before last':
             return x.reshape( x.shape[:-1] + (1,)*num + x.shape[-1:] )
         else:
-            raise ValueError("Unrecognized argument {} for side.".format(side))
+            try:
+                return x.reshape( x.shape[:pos] + (1,)*num + x.shape[pos:] )
+            except ValueError:
+                raise ValueError("Unrecognized argument {} for pos.".format(pos))
 
 def moveaxis(a, source, destination):
     if use_theano and isinstance(x, theano.gof.Variable):
@@ -449,6 +498,12 @@ def conv1d(history_arr, discrete_kernel_arr, mode='valid'):
     """
 
     check(len(history_arr.shape) == 2)
+    output_shape = discrete_kernel_arr.shape[1:]
+    if (discrete_kernel_arr.ndim == 2):
+        # Algorithm assumes a "to" axis on the kernel. Add it.
+        add_axes(discrete_kernel_arr, 1, 'before last')
+    else:
+        check(discrete_kernel_arr.ndim == 3)
 
     # Convolutions leave the time component on the inside, but we want it on the outside
     # So we do the iterations in reverse order, and flip the result with transpose()
@@ -456,7 +511,7 @@ def conv1d(history_arr, discrete_kernel_arr, mode='valid'):
     if use_theano:
         # We use slices from_idx:from_idx+1 because conv2d expects 2D objects
         # We then index [:,0] to remove the spurious dimension
-        return T.stack(
+        result = T.stack(
                   [ T.stack(
                        [ T.signal.conv.conv2d(history_arr[:, from_idx:from_idx+1 ],
                                               discrete_kernel_arr[:, to_idx, from_idx:from_idx+1 ],
@@ -466,10 +521,12 @@ def conv1d(history_arr, discrete_kernel_arr, mode='valid'):
                          for to_idx in T.arange(discrete_kernel_arr.shape[1]) ] )
                        for from_idx in T.arange(discrete_kernel_arr.shape[2]) ] ).T
     else:
-        return np.stack(
+        result = np.stack(
                   [ np.stack(
                        [ scipy.signal.convolve(history_arr[:, from_idx ],
                                             discrete_kernel_arr[:, to_idx, from_idx ],
                                             mode=mode)
                          for to_idx in np.arange(discrete_kernel_arr.shape[1]) ] )
                        for from_idx in np.arange(discrete_kernel_arr.shape[2]) ] ).T
+
+    return result.reshape(result.shape[0:1] + output_shape)
