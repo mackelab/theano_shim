@@ -31,8 +31,22 @@ Pointers for writing theano switches
       True for shared variables as well.
 """
 
+import os
+import logging
 import numpy as np
 import scipy.signal
+
+logger = logging.getLogger('theano_shim')
+logger.setLevel(logging.INFO)
+_fh = logging.FileHandler("theano_shim_" + str(os.getpid()) + ".log", mode='w')
+_fh.setLevel(logging.DEBUG)
+_ch = logging.StreamHandler()
+_ch.setLevel(logging.WARNING)
+_logging_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+_fh.setFormatter(_logging_formatter)
+_ch.setFormatter(_logging_formatter)
+logger.addHandler(_fh)
+logger.addHandler(_ch)
 
 use_theano = False
 inf = np.inf
@@ -52,7 +66,7 @@ lib = None
 def load_theano():
     load(True)
 
-def load(use_theano = False):
+def load(load_theano = False, reraise=False):
     """Reset the module to use or not use Theano.
     This should be called once at the top of your code.
 
@@ -61,10 +75,24 @@ def load(use_theano = False):
     use_theano: Boolean
         - True  : Module will act as an interface to Theano
         - False : Module will simulate Theano using pure Numpy
+    reraise: Boolean
+        If true, import errors will be reraised to allow them to propagate to the parent.
     """
-    global inf, lib
+    global use_theano
+    global theano, T, inf, lib
+
+    if load_theano:
+        try:
+            import theano
+        except ImportError:
+            logger.error("The theano library was not found.")
+            use_theano = False
+            if reraise:
+                raise
+        else:
+            use_theano = True
+
     if use_theano:
-        import theano
         import theano.tensor as T
         import theano.tensor as lib
         import theano.ifelse
@@ -77,7 +105,7 @@ def load(use_theano = False):
         inf = np.inf
 
 # By default, don't load Theano
-load(False)
+load(load_theano=False)
 
 #######################
 # Assert equivalent
