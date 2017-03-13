@@ -17,7 +17,7 @@ At the top of your code, include the line
 By default this will not even try to load Theano, so you can use it on
 a machine where Theano is not installed.
 To 'switch on' Theano, add the following below the import:
-`shim.use_theano()`
+`shim.load_theano()`
 You can switch it back to its default state with `shim.load(False)`.
 
 
