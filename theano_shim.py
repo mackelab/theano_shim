@@ -300,27 +300,32 @@ else:
 # Logical and comparison operators
 
 def lt(a, b):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+    if (use_theano and (isinstance(a, theano.gof.Variable)
+                        or isinstance(b, theano.gof.Variable))):
         return T.lt(a, b)
     else:
         return a < b
 def le(a, b):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+    if (use_theano and (isinstance(a, theano.gof.Variable)
+                        or isinstance(b, theano.gof.Variable))):
         return T.le(a, b)
     else:
         return a <= b
 def gt(a, b):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+    if (use_theano and (isinstance(a, theano.gof.Variable)
+                        or isinstance(b, theano.gof.Variable))):
         return T.gt(a, b)
     else:
         return a > b
 def ge(a, b):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+    if (use_theano and (isinstance(a, theano.gof.Variable)
+                        or isinstance(b, theano.gof.Variable))):
         return T.ge(a, b)
     else:
         return a >= b
 def eq(a, b):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+    if (use_theano and (isinstance(a, theano.gof.Variable)
+                        or isinstance(b, theano.gof.Variable))):
         return T.eq(a, b)
     else:
         return a == b
@@ -358,7 +363,7 @@ def ifelse(condition, then_branch, else_branch, name=None):
             return else_branch
 
 def switch(cond, ift, iff):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+    if (use_theano and isinstance(cond, theano.gof.Variable)):
         return T.switch(cond, ift, iff)
     else:
         return np.where(cond, ift, iff)
