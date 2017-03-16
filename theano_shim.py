@@ -366,32 +366,56 @@ else:
 # Logical and comparison operators
 
 def lt(a, b):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+    if (use_theano and (isinstance(a, theano.gof.Variable)
+                        or isinstance(b, theano.gof.Variable))):
         return T.lt(a, b)
     else:
         return a < b
 def le(a, b):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+    if (use_theano and (isinstance(a, theano.gof.Variable)
+                        or isinstance(b, theano.gof.Variable))):
         return T.le(a, b)
     else:
         return a <= b
 def gt(a, b):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+    if (use_theano and (isinstance(a, theano.gof.Variable)
+                        or isinstance(b, theano.gof.Variable))):
         return T.gt(a, b)
     else:
         return a > b
 def ge(a, b):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+    if (use_theano and (isinstance(a, theano.gof.Variable)
+                        or isinstance(b, theano.gof.Variable))):
         return T.ge(a, b)
     else:
         return a >= b
 def eq(a, b):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+    if (use_theano and (isinstance(a, theano.gof.Variable)
+                        or isinstance(b, theano.gof.Variable))):
         return T.eq(a, b)
     else:
         return a == b
 
+def bool(a):
+    """
+    Call this function on any expression that might
+    appear in a Theano graph as a boolean (Theano expects
+    integers rather than booleans.)
+    """
+    # Booleans need to be converted to integers for Theano
+    if use_theano and isinstance(a, builtins.bool):
+        return np.int8(a)
+    elif use_theano:
+        return a
+    else:
+        return builtins.bool(a)
+
 def and_(a, b):
+    # Special case scalars so they don't return length 1 arrays
+    if isscalar(a) and isscalar(b):
+        return bool(bool(a) * bool(b))
+
+    # matrix function
     if (use_theano and (isinstance(a, theano.gof.Variable)
                         or isinstance(b, theano.gof.Variable))):
         return T.and_(a, b)
@@ -399,6 +423,11 @@ def and_(a, b):
         return np.logical_and(a, b)
 
 def or_(a, b):
+    # Special case scalars so they don't return length 1 arrays
+    if isscalar(a) and isscalar(b):
+        return bool(bool(a) + bool(b))
+
+    # matrix function
     if (use_theano and (isinstance(a, theano.gof.Variable)
                         or isinstance(b, theano.gof.Variable))):
         return T.or_(a, b)
@@ -406,16 +435,45 @@ def or_(a, b):
         return np.logical_or(a, b)
 
 
-
-
 ######################
 # Conditionals
 
-def ifelse(condition, then_branch, else_branch, name=None):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+def ifelse(condition, then_branch, else_branch, name=None, outshape=None):
+    """
+    All parameters except `outshape` are the same as for theano.ifelse.ifelse
+
+    `outshape` is an extra parameter to allow the then_branch and else_branch
+    to have a different shape: the output will be reshaped into this form, but
+    only if Theano is used. The reason we need this is as follows:
+    Suppose we have a vector x which should be reshaped to (2,2). We might write
+    (in pseudocode)
+    ifelse(x.shape == (2,),
+           concatenate((x, x)),
+           x.reshape((2,2)))
+    The Python version of this code has no trouble, because the correct branch
+    will always reshape to (2,2). However, the Theano version wants a result with
+    a well defined shape. Here the branch with `concatenate((x,x))` won't in
+    general have the same shape as `x.reshape((2,2))`.
+    We can get around this by defining outshape=(2,2) and writing instead
+    ifelse(x.shape == (2,),
+           concatenate((x, x)).reshape(outshape),
+           x.reshape((2,2)).reshape(outshape))
+    Now this makes Theano happy, but Python with its greedy evaluation
+    evaluates both arguments before calling ifelse. So if x.shape=(2,2), the
+    call will fail on `concatenate((x,x)).reshape(outshape)`. The solution
+    is to only apply the reshape when using Theano, which is what specifying
+    `outshape` as an argument does.
+    """
+    if (use_theano and (isinstance(condition, theano.gof.Variable)
+                        or isinstance(then_branch, theano.gof.Variable)
+                        or isinstance(else_branch, theano.gof.Variable))):
         # Theano function
-        return theano.ifelse.ifelse(condition, then_branch,
-                                    else_branch, name)
+        if outshape is None:
+            return theano.ifelse.ifelse(condition, then_branch,
+                                        else_branch, name)
+        else:
+            return theano.ifelse.ifelse(condition, then_branch.reshape(outshape),
+                                        else_branch.reshape(outshape), name)
     else:
         # Python function
         if condition:
@@ -424,7 +482,9 @@ def ifelse(condition, then_branch, else_branch, name=None):
             return else_branch
 
 def switch(cond, ift, iff):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+    if (use_theano and (isinstance(cond, theano.gof.Variable)
+                        or isinstance(ift, theano.gof.Variable)
+                        or isinstance(iff, theano.gof.Variable))):
         return T.switch(cond, ift, iff)
     else:
         return np.where(cond, ift, iff)
