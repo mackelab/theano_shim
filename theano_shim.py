@@ -628,6 +628,55 @@ def moveaxis(a, source, destination):
     else:
         return np.moveaxis(a, source, destination)
 
+def pad(array, array_shape, pad_width, mode='constant', **kwargs):
+    """
+    All parameters except `array_shape` are the same as for np.pad.
+    `array_shape` is necessary because while we can deal with a Theano array,
+    we need to know its shape.
+    """
+    if mode not in ['constant']:
+        raise ValueError("theano_shim does not support mode '{}'".format(mode))
+    if not is_theano_object(array):
+        assert(array.shape == array_shape)
+            # If this fails, than the Theano code will also fail
+            # (and it may not be obvious why).
+        return np.pad(array, pad_width, mode, **kwargs)
+    else:
+        def expand_arg(arg):
+            if isscalar(arg):
+                arg = (arg, arg) # before, after
+            if isscalar(arg[0]):
+                if len(arg) == 1:
+                    arg = (arg[0], arg[0])
+                arg = (arg,)
+            if len(arg) == 1:
+                assert(isinstance(arg, (tuple, list)))
+                arg = arg * array.ndim
+            assert(len(arg) == array.ndim)
+            assert(all(len(tup) == 2 for tup in arg))
+            return arg
+        pad_width = expand_arg(pad_width)
+        if mode == 'constant':
+            vals = kwargs.pop('constant_values', None)
+            if vals is None:
+                vals = 0
+            vals = expand_arg(vals)
+
+            res = array
+            for i, (w, v) in enumerate(zip(pad_width, vals)):
+                if (w[0] != 0 or w[1] != 1):
+                    shape1 = array_shape[:i] + (w[0],) + array_shape[i+1:]
+                    shape2 = array_shape[:i] + (w[1],) + array_shape[i+1:]
+                    res = T.concatenate( ( np.ones(shape1)*v[0],
+                                           res,
+                                           np.ones(shape2)*v[1]),
+                                         axis=i)
+
+        return res
+
+
+
+
 
 ########################
 # Wrapper for discrete 1D convolutions
