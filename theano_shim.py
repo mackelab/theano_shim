@@ -4,9 +4,7 @@ conditionals just to select between e.g. T.sum and np.sum.
 More specific calls can be dealt with in the related code by
 conditioning on this module's `use_theano` flag
 
-This module's `lib` attribute will be attached to either theano.tensor
-or numpy, such that calls can be made as `theano_shim.lib.sum`.
-It also provides interchangeable interfaces to common operations,
+This module provides an interchangeable interface to common operations,
 such as type casting and checking, assertions and rounding, as well
 as 'shim' datatypes for random number streams and shared variables.
 
@@ -29,21 +27,37 @@ Pointers for writing theano switches
       objects such as shared variables.
     + isinstance(x, theano.gof.Variable) is more inclusive, returning
       True for shared variables as well.
+    + These two tests are provided by the `is_theano_variable` and
+      `is_theano_object` convenience methods.
 """
 
+import os
+import logging
+import builtins
 import numpy as np
 import scipy.signal
+
+logger = logging.getLogger('theano_shim')
+logger.setLevel(logging.INFO)
+_fh = logging.FileHandler("theano_shim_" + str(os.getpid()) + ".log", mode='w')
+_fh.setLevel(logging.DEBUG)
+_ch = logging.StreamHandler()
+_ch.setLevel(logging.WARNING)
+_logging_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+_fh.setFormatter(_logging_formatter)
+_ch.setFormatter(_logging_formatter)
+logger.addHandler(_fh)
+logger.addHandler(_ch)
 
 use_theano = False
 inf = np.inf
 
 theano_updates = {}
-    # Stores a Theano update dictionary. This value can only be
-    # changed once, unless a call to self.theano_refresh is made
-def theano_reset():
-    theano_updates = {}
+    # Stores a Theano update dictionary. See below for use
 
 lib = None
+    # DEPRECATION WARNING: lib will soon be removed
+RandomStreams = None
 #######################
 # Initialization function.
 # Import the appropriate numerical library into this namespace,
