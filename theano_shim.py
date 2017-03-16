@@ -66,7 +66,7 @@ RandomStreams = None
 def load_theano():
     load(True)
 
-def load(use_theano = False):
+def load(load_theano = False, reraise=False):
     """Reset the module to use or not use Theano.
     This should be called once at the top of your code.
 
@@ -75,10 +75,24 @@ def load(use_theano = False):
     use_theano: Boolean
         - True  : Module will act as an interface to Theano
         - False : Module will simulate Theano using pure Numpy
+    reraise: Boolean
+        If true, import errors will be reraised to allow them to propagate to the parent.
     """
-    global inf, lib
+    global use_theano
+    global theano, T, inf, lib, RandomStreams
+
+    if load_theano:
+        try:
+            import theano
+        except ImportError:
+            logger.error("The theano library was not found.")
+            use_theano = False
+            if reraise:
+                raise
+        else:
+            use_theano = True
+
     if use_theano:
-        import theano
         import theano.tensor as T
         import theano.tensor as lib
         import theano.ifelse
@@ -86,12 +100,46 @@ def load(use_theano = False):
         #from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams  # CPU & GPU
 
         inf = 1e12
+        RandomStreams = theano.tensor.shared_randomstreams.RandomStreams
+
     else:
         import numpy as lib
         inf = np.inf
+        RandomStreams = ShimmedRandomStreams
 
-# By default, don't load Theano
-load(False)
+##########################
+# Managing theano updates
+
+def add_update(variable, value):
+    logger.info("Adding Theano update : {} -> {}".format(variable.name, str(value)))
+    if variable in self.theano.updates:
+        raise ValueError("Cannot update the same shared variable twice. "
+                         "It should be used in a `theano.function` call, and then "
+                         "cleared with `shim.theano_reset()` before being "
+                         "updated again.")
+    if not is_shared_var(variable):
+        raise ValueError("The updates mechanism only applies to shared variables.")
+
+    self.theano_updates[variable] = value
+
+def add_updates(updates):
+    """
+    Parameters
+    ----------
+    updates: dict or iterable
+        Either a dictionary of `variable:value` pairs, or an iterable of
+        `(variable, value)` tuples.
+    """
+    if isinstance(updates, dict):
+        for key, val in updates.items():
+            add_update(key, val)
+    else:
+        for key, val in updates:
+            add_update(key, val)
+
+def theano_reset():
+    logger.info("Clearing Theano updates")
+    theano_updates = {}
 
 #######################
 # Assert equivalent
