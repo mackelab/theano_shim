@@ -737,3 +737,73 @@ def conv1d(history_arr, discrete_kernel_arr, mode='valid'):
                        for from_idx in np.arange(discrete_kernel_arr.shape[2]) ] ).T
 
     return result.reshape(result.shape[0:1] + output_shape)
+
+
+
+################################
+# Module initialization
+
+load(load_theano=False)
+    # By default, don't load Theano
+
+#######################
+# Straight redirects to NumPy/Theano
+
+def all(x):
+    if is_theano_object(x):
+        return T.all(x)
+    else:
+        return np.all(x)
+def concatenate(tensor_list, axis=0):
+    if any(is_theano_object(x) for x in tensor_list):
+        return T.concatenate(tensor_list, axis=0)
+    else:
+        return np.concatenate(tensor_list, axis=0)
+def exp(x):
+    if is_theano_object(x):
+        return T.exp(x)
+    else:
+        return np.exp(x)
+def min(x):
+    if is_theano_object(x):
+        return T.min(x)
+    else:
+        return np.min(x)
+def max(x):
+    if is_theano_object(x):
+        return T.max(x)
+    else:
+        return np.max(x)
+def prod(x, *args):
+    if is_theano_object(x):
+        return T.prod(x, *args)
+    else:
+        return np.prod(x, *args)
+def tile(x, reps, ndim=None):
+    if is_theano_object(x):
+        return T.tile(x, reps, ndim)
+    else:
+        return np.tile(x, reps)
+
+# The following is code that could be used for automatic
+# redirects on a class
+# #######################
+# # Default behaviour is to redirect to NumPy or Theano
+# # if a particular attribute is not already defined
+
+# class _LibAttribute:
+#     def __init__(self, name):
+#         try:
+#             self.npattr = getattr(np, name)
+#             self.libattr = getattr(shim.lib, name)
+#         except AttributeError:
+#             raise AttributeError("theano_shim does not define '{}'.".format(name))
+
+#     def __call__(self, *args):
+#         try:
+#             return self.npattr(*args)
+#         except TypeError:
+#             return self.libattr(*args)
+
+# def __getattr__(self, name):
+#     return _LibAttribute(name)
