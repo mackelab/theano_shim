@@ -207,21 +207,36 @@ def istype(obj, type_str):
     else:
         return any(ts in obj.dtype for ts in type_str)
 
-#######################
-# Set functions to cast to an integer variable
-# These will be a Theano type, if Theano is used
-def cast_varint16(x):
+def is_theano_var(var):
+    return use_theano and isinstance(var, theano.tensor.TensorVariable)
+def is_theano_object(obj):
+    return use_theano and isinstance(obj, theano.gof.Variable)
+def is_shared_var(var):
     if use_theano:
+        return isinstance(var, T.sharedvar.SharedVariable)
+    else:
+        return isinstance(var, ShimmedShared)
+
+#######################
+# Functions to cast to an integer variable
+def cast_int8(x):
+    if is_theano_object(x):
+        return T.cast(x, 'int8')
+    else:
+        return np.int8(x)
+
+def cast_int16(x):
+    if use_theano and isinstance(x, theano.gof.Variable):
         return T.cast(x, 'int16')
     else:
         return np.int16(x)
-def cast_varint32(x):
-    if use_theano:
+def cast_int32(x):
+    if use_theano and isinstance(x, theano.gof.Variable):
         return T.cast(x, 'int32')
     else:
         return np.int32(x)
-def cast_varint64(x):
-    if use_theano:
+def cast_int64(x):
+    if use_theano and isinstance(x, theano.gof.Variable):
         return T.cast(x, 'int64')
     else:
         return np.int64(x)
@@ -237,7 +252,7 @@ def round(x):
 
 def asvariable(x, dtype=None):
     if use_theano:
-        # No `isinstance` here: the point is to cast to variable
+        # No `isinstance` here: the point is to cast to a Theano variable
         if dtype is not None:
             return T.cast(T.as_tensor_variable(x), dtype)
         else:
@@ -255,9 +270,26 @@ def asarray(x, dtype=None):
         return np.asarray(x, dtype=dtype)
 
 def isscalar(x):
-    return asarray(x).ndim == 0
+    arrayed_x = asarray(x)
+    return asarray(x).ndim == 0 and arrayed_x.dtype != 'object'
 
-def flatten(x, outdim):
+def isarray(x):
+    return hasattr(x, 'ndim')
+
+def asscalar(x):
+    if isscalar(x):
+        return x
+    elif is_theano_object(x):
+        if all(x.broadcastable):
+            return T.flatten(x)[0]
+        else:
+            raise ValueError("To cast a Theano tensor as a scalar, "
+                             "all its dimensions must be broadcastable.")
+    else:
+        return np.asscalar(x)
+
+
+def flatten(x, outdim=1):
     if use_theano and isinstance(x, theano.gof.Variable):
         return T.flatten(x, outdim)
     else:
