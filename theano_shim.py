@@ -160,16 +160,25 @@ def check(stmt):
 
 ######################
 # Retrieving test values
-def get_test_value(var):
+def get_test_value(var, nofail=False):
+    """
+    If `value` is a Theano variable, return its test value if it is defined.
+    Otherwise just return `value` unchanged.
+    If `nofail` is False (default), will raise an error if no test value is found.
+    Otherwise returns None
+    """
     if use_theano and isinstance(var, T.sharedvar.SharedVariable):
         retval = var.get_value()
     elif use_theano and isinstance(var, theano.gof.Variable):
         try:
             retval = var.tag.test_value
         except AttributeError:
-            raise AttributeError("You've attempted to execute a function that "
-                                 "requires a test_value for the variable {} to "
-                                 "be set, and this value is not set.".format(var))
+            if nofail:
+                return None
+            else:
+                raise AttributeError("You've attempted to execute a function that "
+                                     "requires a test_value for the variable {} to "
+                                     "be set, and this value is not set.".format(var))
     else:
         retval = var
     return retval
@@ -322,7 +331,7 @@ def smallest(*args):
         return retval
 
 def abs(x):
-    if use_theano and isintance(x, theano.gof.Variable):
+    if use_theano and isinstance(x, theano.gof.Variable):
         if x.ndim == 2:
             return __builtins__['abs'](x)
         else:
@@ -346,14 +355,6 @@ class ShimmedRandomStreams:
 
     def binomial(self, size=(), n=1, p=0.5, ndim=None):
         return np.random.binomial(n, p, size)
-
-if use_theano:
-    RandomStreams = theano.tensor.shared_randomstreams.RandomStreams
-
-else:
-    RandomStreams = ShimmedRandomStreams
-
-
 
 ################################################
 # Define Theano placeins, which execute
@@ -536,7 +537,8 @@ def shared(value, name=None, strict=False, allow_downcast=None, **kwargs):
 ######################
 # Interchangeable set_subtensor
 def set_subtensor(x, y, inplace=False, tolerate_aliasing=False):
-    if use_theano and isinstance(x, theano.gof.Variable):
+    if use_theano and (isinstance(x, theano.gof.Variable)
+                       or isinstance(y, theano.gof.Variable)):
         return T.set_subtensor(x, y, inplace, tolerate_aliasing)
     else:
         assert(x.base is not None)
@@ -545,7 +547,8 @@ def set_subtensor(x, y, inplace=False, tolerate_aliasing=False):
         return x.base
 
 def inc_subtensor(x, y, inplace=False, tolerate_aliasing=False):
-    if use_theano and isinstance(x, theano.gof.Variable):
+    if use_theano and (isinstance(x, theano.gof.Variable)
+                       or isinstance(y, theano.gof.Variable)):
         return T.inc_subtensor(x, y, inplace, tolerate_aliasing)
     else:
         assert(x.base is not None)
@@ -597,10 +600,11 @@ def add_axes(x, num=1, pos='left'):
             shuffle_pattern = shuffle_pattern[:-1] + ['x']*num + shuffle_pattern[-1:]
         else:
             try:
+                shuffle_pattern = list(range(x.ndim))
                 shuffle_pattern = shuffle_pattern[:pos] + ['x']*num + shuffle_pattern[pos:]
             except TypeError:
                 raise ValueError("Unrecognized argument `{}` for pos.".format(pos))
-        return T.dimsuffle(shuffle_pattern)
+        return x.dimshuffle(shuffle_pattern)
     else:
         x = np.asarray(x)
         if pos in ['left', 'before']:
