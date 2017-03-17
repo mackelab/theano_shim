@@ -117,7 +117,7 @@ def add_update(variable, value):
                          "It should be used in a `theano.function` call, and then "
                          "cleared with `shim.theano_reset()` before being "
                          "updated again.")
-    if not is_shared_var(variable):
+    if not is_shared_variable(variable):
         raise ValueError("The updates mechanism only applies to shared variables.")
 
     self.theano_updates[variable] = value
@@ -216,11 +216,11 @@ def istype(obj, type_str):
     else:
         return any(ts in obj.dtype for ts in type_str)
 
-def is_theano_var(var):
+def is_theano_variable(var):
     return use_theano and isinstance(var, theano.tensor.TensorVariable)
 def is_theano_object(obj):
     return use_theano and isinstance(obj, theano.gof.Variable)
-def is_shared_var(var):
+def is_shared_variable(var):
     if use_theano:
         return isinstance(var, T.sharedvar.SharedVariable)
     else:
@@ -639,8 +639,11 @@ def pad(array, array_shape, pad_width, mode='constant', **kwargs):
     if not is_theano_object(array):
         assert(array.shape == array_shape)
             # If this fails, than the Theano code will also fail
-            # (and it may not be obvious why).
+            # (perhaps cryptically).
         return np.pad(array, pad_width, mode, **kwargs)
+    elif is_shared_variable(array):
+        assert(array.get_value(borrow=True).shape == array_shape)
+        return np.pad(array.get_value(borrow=True), pad_width, mode, **kwargs)
     else:
         def expand_arg(arg):
             if isscalar(arg):
@@ -673,10 +676,6 @@ def pad(array, array_shape, pad_width, mode='constant', **kwargs):
                                          axis=i)
 
         return res
-
-
-
-
 
 ########################
 # Wrapper for discrete 1D convolutions
