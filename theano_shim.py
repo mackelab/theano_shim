@@ -739,6 +739,15 @@ def conv1d(history_arr, discrete_kernel_arr, mode='valid'):
     return result.reshape(result.shape[0:1] + output_shape)
 
 
+def conv1d_(h, x, h_size=None):
+	if is_theano_object(h) or is_theano_object(x):
+		s = x * h[0]
+		for tau in range(1, h_size):
+			u = x[:-tau] * h[tau]
+			s = T.inc_subtensor(s[tau:], u)
+	else:
+		s = scipy.signal.lfilter(h, 1, x)
+	return s
 
 ################################
 # Module initialization
@@ -759,6 +768,11 @@ def concatenate(tensor_list, axis=0):
         return T.concatenate(tensor_list, axis=0)
     else:
         return np.concatenate(tensor_list, axis=0)
+def dot(x, y):
+    if is_theano_object(x) or is_theano_object(y):
+        return T.dot(x, y)
+    else:
+        return np.dot(x, y)
 def exp(x):
     if is_theano_object(x):
         return T.exp(x)
