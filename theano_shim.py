@@ -4,9 +4,7 @@ conditionals just to select between e.g. T.sum and np.sum.
 More specific calls can be dealt with in the related code by
 conditioning on this module's `use_theano` flag
 
-This module's `lib` attribute will be attached to either theano.tensor
-or numpy, such that calls can be made as `theano_shim.lib.sum`.
-It also provides interchangeable interfaces to common operations,
+This module provides an interchangeable interface to common operations,
 such as type casting and checking, assertions and rounding, as well
 as 'shim' datatypes for random number streams and shared variables.
 
@@ -29,10 +27,13 @@ Pointers for writing theano switches
       objects such as shared variables.
     + isinstance(x, theano.gof.Variable) is more inclusive, returning
       True for shared variables as well.
+    + These two tests are provided by the `is_theano_variable` and
+      `is_theano_object` convenience methods.
 """
 
 import os
 import logging
+import builtins
 import numpy as np
 import scipy.signal
 
@@ -52,12 +53,11 @@ use_theano = False
 inf = np.inf
 
 theano_updates = {}
-    # Stores a Theano update dictionary. This value can only be
-    # changed once, unless a call to self.theano_refresh is made
-def theano_reset():
-    theano_updates = {}
+    # Stores a Theano update dictionary. See below for use
 
 lib = None
+    # DEPRECATION WARNING: lib will soon be removed
+RandomStreams = None
 #######################
 # Initialization function.
 # Import the appropriate numerical library into this namespace,
@@ -79,7 +79,7 @@ def load(load_theano = False, reraise=False):
         If true, import errors will be reraised to allow them to propagate to the parent.
     """
     global use_theano
-    global theano, T, inf, lib
+    global theano, T, inf, lib, RandomStreams
 
     if load_theano:
         try:
@@ -100,12 +100,46 @@ def load(load_theano = False, reraise=False):
         #from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams  # CPU & GPU
 
         inf = 1e12
+        RandomStreams = theano.tensor.shared_randomstreams.RandomStreams
+
     else:
         import numpy as lib
         inf = np.inf
+        RandomStreams = ShimmedRandomStreams
 
-# By default, don't load Theano
-load(load_theano=False)
+##########################
+# Managing theano updates
+
+def add_update(variable, value):
+    logger.info("Adding Theano update : {} -> {}".format(variable.name, str(value)))
+    if variable in self.theano.updates:
+        raise ValueError("Cannot update the same shared variable twice. "
+                         "It should be used in a `theano.function` call, and then "
+                         "cleared with `shim.theano_reset()` before being "
+                         "updated again.")
+    if not is_shared_var(variable):
+        raise ValueError("The updates mechanism only applies to shared variables.")
+
+    self.theano_updates[variable] = value
+
+def add_updates(updates):
+    """
+    Parameters
+    ----------
+    updates: dict or iterable
+        Either a dictionary of `variable:value` pairs, or an iterable of
+        `(variable, value)` tuples.
+    """
+    if isinstance(updates, dict):
+        for key, val in updates.items():
+            add_update(key, val)
+    else:
+        for key, val in updates:
+            add_update(key, val)
+
+def theano_reset():
+    logger.info("Clearing Theano updates")
+    theano_updates = {}
 
 #######################
 # Assert equivalent
@@ -126,16 +160,25 @@ def check(stmt):
 
 ######################
 # Retrieving test values
-def get_test_value(var):
+def get_test_value(var, nofail=False):
+    """
+    If `value` is a Theano variable, return its test value if it is defined.
+    Otherwise just return `value` unchanged.
+    If `nofail` is False (default), will raise an error if no test value is found.
+    Otherwise returns None
+    """
     if use_theano and isinstance(var, T.sharedvar.SharedVariable):
         retval = var.get_value()
     elif use_theano and isinstance(var, theano.gof.Variable):
         try:
             retval = var.tag.test_value
         except AttributeError:
-            raise AttributeError("You've attempted to execute a function that "
-                                 "requires a test_value for the variable {} to "
-                                 "be set, and this value is not set.".format(var))
+            if nofail:
+                return None
+            else:
+                raise AttributeError("You've attempted to execute a function that "
+                                     "requires a test_value for the variable {} to "
+                                     "be set, and this value is not set.".format(var))
     else:
         retval = var
     return retval
@@ -173,21 +216,36 @@ def istype(obj, type_str):
     else:
         return any(ts in obj.dtype for ts in type_str)
 
-#######################
-# Set functions to cast to an integer variable
-# These will be a Theano type, if Theano is used
-def cast_varint16(x):
+def is_theano_var(var):
+    return use_theano and isinstance(var, theano.tensor.TensorVariable)
+def is_theano_object(obj):
+    return use_theano and isinstance(obj, theano.gof.Variable)
+def is_shared_var(var):
     if use_theano:
+        return isinstance(var, T.sharedvar.SharedVariable)
+    else:
+        return isinstance(var, ShimmedShared)
+
+#######################
+# Functions to cast to an integer variable
+def cast_int8(x):
+    if is_theano_object(x):
+        return T.cast(x, 'int8')
+    else:
+        return np.int8(x)
+
+def cast_int16(x):
+    if use_theano and isinstance(x, theano.gof.Variable):
         return T.cast(x, 'int16')
     else:
         return np.int16(x)
-def cast_varint32(x):
-    if use_theano:
+def cast_int32(x):
+    if use_theano and isinstance(x, theano.gof.Variable):
         return T.cast(x, 'int32')
     else:
         return np.int32(x)
-def cast_varint64(x):
-    if use_theano:
+def cast_int64(x):
+    if use_theano and isinstance(x, theano.gof.Variable):
         return T.cast(x, 'int64')
     else:
         return np.int64(x)
@@ -203,7 +261,7 @@ def round(x):
 
 def asvariable(x, dtype=None):
     if use_theano:
-        # No `isinstance` here: the point is to cast to variable
+        # No `isinstance` here: the point is to cast to a Theano variable
         if dtype is not None:
             return T.cast(T.as_tensor_variable(x), dtype)
         else:
@@ -221,9 +279,26 @@ def asarray(x, dtype=None):
         return np.asarray(x, dtype=dtype)
 
 def isscalar(x):
-    return asarray(x).ndim == 0
+    arrayed_x = asarray(x)
+    return asarray(x).ndim == 0 and arrayed_x.dtype != 'object'
 
-def flatten(x, outdim):
+def isarray(x):
+    return hasattr(x, 'ndim')
+
+def asscalar(x):
+    if isscalar(x):
+        return x
+    elif is_theano_object(x):
+        if all(x.broadcastable):
+            return T.flatten(x)[0]
+        else:
+            raise ValueError("To cast a Theano tensor as a scalar, "
+                             "all its dimensions must be broadcastable.")
+    else:
+        return np.asscalar(x)
+
+
+def flatten(x, outdim=1):
     if use_theano and isinstance(x, theano.gof.Variable):
         return T.flatten(x, outdim)
     else:
@@ -256,7 +331,7 @@ def smallest(*args):
         return retval
 
 def abs(x):
-    if use_theano and isintance(x, theano.gof.Variable):
+    if use_theano and isinstance(x, theano.gof.Variable):
         if x.ndim == 2:
             return __builtins__['abs'](x)
         else:
@@ -280,14 +355,6 @@ class ShimmedRandomStreams:
 
     def binomial(self, size=(), n=1, p=0.5, ndim=None):
         return np.random.binomial(n, p, size)
-
-if use_theano:
-    RandomStreams = theano.tensor.shared_randomstreams.RandomStreams
-
-else:
-    RandomStreams = ShimmedRandomStreams
-
-
 
 ################################################
 # Define Theano placeins, which execute
@@ -330,7 +397,26 @@ def eq(a, b):
     else:
         return a == b
 
+def bool(a):
+    """
+    Call this function on any expression that might
+    appear in a Theano graph as a boolean (Theano expects
+    integers rather than booleans.)
+    """
+    # Booleans need to be converted to integers for Theano
+    if use_theano and isinstance(a, builtins.bool):
+        return np.int8(a)
+    elif use_theano:
+        return a
+    else:
+        return builtins.bool(a)
+
 def and_(a, b):
+    # Special case scalars so they don't return length 1 arrays
+    if isscalar(a) and isscalar(b):
+        return bool(bool(a) * bool(b))
+
+    # matrix function
     if (use_theano and (isinstance(a, theano.gof.Variable)
                         or isinstance(b, theano.gof.Variable))):
         return T.and_(a, b)
@@ -338,6 +424,11 @@ def and_(a, b):
         return np.logical_and(a, b)
 
 def or_(a, b):
+    # Special case scalars so they don't return length 1 arrays
+    if isscalar(a) and isscalar(b):
+        return bool(bool(a) + bool(b))
+
+    # matrix function
     if (use_theano and (isinstance(a, theano.gof.Variable)
                         or isinstance(b, theano.gof.Variable))):
         return T.or_(a, b)
@@ -345,16 +436,45 @@ def or_(a, b):
         return np.logical_or(a, b)
 
 
-
-
 ######################
 # Conditionals
 
-def ifelse(condition, then_branch, else_branch, name=None):
-    if (use_theano and isinstance(condition, theano.gof.Variable)):
+def ifelse(condition, then_branch, else_branch, name=None, outshape=None):
+    """
+    All parameters except `outshape` are the same as for theano.ifelse.ifelse
+
+    `outshape` is an extra parameter to allow the then_branch and else_branch
+    to have a different shape: the output will be reshaped into this form, but
+    only if Theano is used. The reason we need this is as follows:
+    Suppose we have a vector x which should be reshaped to (2,2). We might write
+    (in pseudocode)
+    ifelse(x.shape == (2,),
+           concatenate((x, x)),
+           x.reshape((2,2)))
+    The Python version of this code has no trouble, because the correct branch
+    will always reshape to (2,2). However, the Theano version wants a result with
+    a well defined shape. Here the branch with `concatenate((x,x))` won't in
+    general have the same shape as `x.reshape((2,2))`.
+    We can get around this by defining outshape=(2,2) and writing instead
+    ifelse(x.shape == (2,),
+           concatenate((x, x)).reshape(outshape),
+           x.reshape((2,2)).reshape(outshape))
+    Now this makes Theano happy, but Python with its greedy evaluation
+    evaluates both arguments before calling ifelse. So if x.shape=(2,2), the
+    call will fail on `concatenate((x,x)).reshape(outshape)`. The solution
+    is to only apply the reshape when using Theano, which is what specifying
+    `outshape` as an argument does.
+    """
+    if (use_theano and (isinstance(condition, theano.gof.Variable)
+                        or isinstance(then_branch, theano.gof.Variable)
+                        or isinstance(else_branch, theano.gof.Variable))):
         # Theano function
-        return theano.ifelse.ifelse(condition, then_branch,
-                                    else_branch, name)
+        if outshape is None:
+            return theano.ifelse.ifelse(condition, then_branch,
+                                        else_branch, name)
+        else:
+            return theano.ifelse.ifelse(condition, then_branch.reshape(outshape),
+                                        else_branch.reshape(outshape), name)
     else:
         # Python function
         if condition:
@@ -363,7 +483,9 @@ def ifelse(condition, then_branch, else_branch, name=None):
             return else_branch
 
 def switch(cond, ift, iff):
-    if (use_theano and isinstance(cond, theano.gof.Variable)):
+    if (use_theano and (isinstance(cond, theano.gof.Variable)
+                        or isinstance(ift, theano.gof.Variable)
+                        or isinstance(iff, theano.gof.Variable))):
         return T.switch(cond, ift, iff)
     else:
         return np.where(cond, ift, iff)
@@ -415,7 +537,8 @@ def shared(value, name=None, strict=False, allow_downcast=None, **kwargs):
 ######################
 # Interchangeable set_subtensor
 def set_subtensor(x, y, inplace=False, tolerate_aliasing=False):
-    if use_theano and isinstance(x, theano.gof.Variable):
+    if use_theano and (isinstance(x, theano.gof.Variable)
+                       or isinstance(y, theano.gof.Variable)):
         return T.set_subtensor(x, y, inplace, tolerate_aliasing)
     else:
         assert(x.base is not None)
@@ -424,7 +547,8 @@ def set_subtensor(x, y, inplace=False, tolerate_aliasing=False):
         return x.base
 
 def inc_subtensor(x, y, inplace=False, tolerate_aliasing=False):
-    if use_theano and isinstance(x, theano.gof.Variable):
+    if use_theano and (isinstance(x, theano.gof.Variable)
+                       or isinstance(y, theano.gof.Variable)):
         return T.inc_subtensor(x, y, inplace, tolerate_aliasing)
     else:
         assert(x.base is not None)
@@ -476,10 +600,11 @@ def add_axes(x, num=1, pos='left'):
             shuffle_pattern = shuffle_pattern[:-1] + ['x']*num + shuffle_pattern[-1:]
         else:
             try:
+                shuffle_pattern = list(range(x.ndim))
                 shuffle_pattern = shuffle_pattern[:pos] + ['x']*num + shuffle_pattern[pos:]
             except TypeError:
                 raise ValueError("Unrecognized argument `{}` for pos.".format(pos))
-        return T.dimsuffle(shuffle_pattern)
+        return x.dimshuffle(shuffle_pattern)
     else:
         x = np.asarray(x)
         if pos in ['left', 'before']:
@@ -502,6 +627,55 @@ def moveaxis(a, source, destination):
         return a.dimshuffle(axes_lst)
     else:
         return np.moveaxis(a, source, destination)
+
+def pad(array, array_shape, pad_width, mode='constant', **kwargs):
+    """
+    All parameters except `array_shape` are the same as for np.pad.
+    `array_shape` is necessary because while we can deal with a Theano array,
+    we need to know its shape.
+    """
+    if mode not in ['constant']:
+        raise ValueError("theano_shim does not support mode '{}'".format(mode))
+    if not is_theano_object(array):
+        assert(array.shape == array_shape)
+            # If this fails, than the Theano code will also fail
+            # (and it may not be obvious why).
+        return np.pad(array, pad_width, mode, **kwargs)
+    else:
+        def expand_arg(arg):
+            if isscalar(arg):
+                arg = (arg, arg) # before, after
+            if isscalar(arg[0]):
+                if len(arg) == 1:
+                    arg = (arg[0], arg[0])
+                arg = (arg,)
+            if len(arg) == 1:
+                assert(isinstance(arg, (tuple, list)))
+                arg = arg * array.ndim
+            assert(len(arg) == array.ndim)
+            assert(all(len(tup) == 2 for tup in arg))
+            return arg
+        pad_width = expand_arg(pad_width)
+        if mode == 'constant':
+            vals = kwargs.pop('constant_values', None)
+            if vals is None:
+                vals = 0
+            vals = expand_arg(vals)
+
+            res = array
+            for i, (w, v) in enumerate(zip(pad_width, vals)):
+                if (w[0] != 0 or w[1] != 1):
+                    shape1 = array_shape[:i] + (w[0],) + array_shape[i+1:]
+                    shape2 = array_shape[:i] + (w[1],) + array_shape[i+1:]
+                    res = T.concatenate( ( np.ones(shape1)*v[0],
+                                           res,
+                                           np.ones(shape2)*v[1]),
+                                         axis=i)
+
+        return res
+
+
+
 
 
 ########################
@@ -563,3 +737,73 @@ def conv1d(history_arr, discrete_kernel_arr, mode='valid'):
                        for from_idx in np.arange(discrete_kernel_arr.shape[2]) ] ).T
 
     return result.reshape(result.shape[0:1] + output_shape)
+
+
+
+################################
+# Module initialization
+
+load(load_theano=False)
+    # By default, don't load Theano
+
+#######################
+# Straight redirects to NumPy/Theano
+
+def all(x):
+    if is_theano_object(x):
+        return T.all(x)
+    else:
+        return np.all(x)
+def concatenate(tensor_list, axis=0):
+    if any(is_theano_object(x) for x in tensor_list):
+        return T.concatenate(tensor_list, axis=0)
+    else:
+        return np.concatenate(tensor_list, axis=0)
+def exp(x):
+    if is_theano_object(x):
+        return T.exp(x)
+    else:
+        return np.exp(x)
+def min(x):
+    if is_theano_object(x):
+        return T.min(x)
+    else:
+        return np.min(x)
+def max(x):
+    if is_theano_object(x):
+        return T.max(x)
+    else:
+        return np.max(x)
+def prod(x, *args):
+    if is_theano_object(x):
+        return T.prod(x, *args)
+    else:
+        return np.prod(x, *args)
+def tile(x, reps, ndim=None):
+    if is_theano_object(x):
+        return T.tile(x, reps, ndim)
+    else:
+        return np.tile(x, reps)
+
+# The following is code that could be used for automatic
+# redirects on a class
+# #######################
+# # Default behaviour is to redirect to NumPy or Theano
+# # if a particular attribute is not already defined
+
+# class _LibAttribute:
+#     def __init__(self, name):
+#         try:
+#             self.npattr = getattr(np, name)
+#             self.libattr = getattr(shim.lib, name)
+#         except AttributeError:
+#             raise AttributeError("theano_shim does not define '{}'.".format(name))
+
+#     def __call__(self, *args):
+#         try:
+#             return self.npattr(*args)
+#         except TypeError:
+#             return self.libattr(*args)
+
+# def __getattr__(self, name):
+#     return _LibAttribute(name)
