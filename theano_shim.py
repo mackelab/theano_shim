@@ -34,7 +34,9 @@ Pointers for writing theano switches
 import os
 import logging
 import builtins
+import collections
 import numpy as np
+import scipy as sp
 import scipy.signal
 
 logger = logging.getLogger('theano_shim')
@@ -233,7 +235,6 @@ def cast_int8(x):
         return T.cast(x, 'int8')
     else:
         return np.int8(x)
-
 def cast_int16(x):
     if use_theano and isinstance(x, theano.gof.Variable):
         return T.cast(x, 'int16')
@@ -499,7 +500,7 @@ class ShimmedShared(np.ndarray):
     # for indications on subclassing ndarray
 
     def __new__(cls, value, name=None, strict=False, allow_downcast=None, **kwargs):
-        obj = np.asarray(value).view(cls)
+        obj = np.asarray(value).view(cls).copy()
         obj.name = name
         return obj
 
@@ -520,7 +521,18 @@ class ShimmedShared(np.ndarray):
             # On values obtained by get_value, equality testing shold
             # follow the usual rules for arrays, hence the view(np.ndarray)
     def set_value(self, new_value, borrow=False):
+        """
+        If `allow_resize` is false (default), will raise an error if
+        new_value has a different shape than the stored variable.
+        """
         try:
+            if self.shape != new_value.shape:
+                self.resize(new_value.shape, refcheck=False)
+                # refcheck is necessary to get this to work, but bypasses
+                # the reference checks. Reference errors might occur if
+                # a reference to this ShimmedShared variable exists elsewhere,
+                # and we try to access it after the resize. This is the kind
+                # of thing you shouldn't do anyway with Theano variables.
             self[:] = new_value
         except IndexError:
             # Scalars will fail on the above
@@ -677,6 +689,20 @@ def pad(array, array_shape, pad_width, mode='constant', **kwargs):
 
         return res
 
+
+########################
+# Functions from scipy.misc
+
+def factorial(n, exact=False):
+    """Note: the Theano version uses `gamma` regardless of `exact`"""
+    assert(istype(n, 'int'))
+    check((n >= 0).all())
+    if is_theano_object(n):
+        return T.gamma(n+1)
+    else:
+        return sp.misc.factorial(n, exact)
+
+
 ########################
 # Wrapper for discrete 1D convolutions
 
@@ -763,6 +789,11 @@ def exp(x):
         return T.exp(x)
     else:
         return np.exp(x)
+def log(x):
+    if is_theano_object(x):
+        return T.log(x)
+    else:
+        return np.log(x)
 def min(x):
     if is_theano_object(x):
         return T.min(x)
@@ -778,6 +809,19 @@ def prod(x, *args):
         return T.prod(x, *args)
     else:
         return np.prod(x, *args)
+def sum(x, axis=None, dtype=None, acc_dtype=None, keepdims=np._NoValue):
+    if is_theano_object(x):
+        result = T.sum(x, axis, dtype, acc_dtype)
+        if keepdims:
+            if not isinstance(axis, collections.Iterable):
+                axes = [axis]
+            else:
+                axes = sorted(axis)
+            for axis in axes:
+                result = add_axes(result, pos=axis)
+        return result
+    else:
+        return np.sum(x, axis=axis, dtype=dtype, keepdims=keepdims)
 def tile(x, reps, ndim=None):
     if is_theano_object(x):
         return T.tile(x, reps, ndim)
