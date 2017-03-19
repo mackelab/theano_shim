@@ -525,6 +525,7 @@ class ShimmedShared(np.ndarray):
         If `allow_resize` is false (default), will raise an error if
         new_value has a different shape than the stored variable.
         """
+        new_value = np.asarray(new_value)
         try:
             if self.shape != new_value.shape:
                 self.resize(new_value.shape, refcheck=False)
@@ -540,10 +541,17 @@ class ShimmedShared(np.ndarray):
             self = super(ShimmedShared, self).__setitem__(None, new_value)
 
 def shared(value, name=None, strict=False, allow_downcast=None, **kwargs):
+    value = np.asarray(value)
     if use_theano:
-        return theano.shared(value, name, strict, allow_downcast, **kwargs)
+        # Unless a broadcast pattern is specified, we create one to match
+        # the NumPy behaviour (broadcastable on all axes of dimension 1).
+        broadcast_pattern = kwargs.pop('broadcastable', None)
+        if broadcast_pattern is None:
+            broadcast_pattern = tuple(True if s==1 else False for s in value.shape)
+        return theano.shared(value, name, strict, allow_downcast,
+                             broadcastable=broadcast_pattern, **kwargs)
     else:
-        return ShimmedShared(np.asarray(value), name, strict, allow_downcast, **kwargs)
+        return ShimmedShared(value, name, strict, allow_downcast, **kwargs)
 
 
 ######################
