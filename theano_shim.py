@@ -784,6 +784,11 @@ def concatenate(tensor_list, axis=0):
         return T.concatenate(tensor_list, axis=0)
     else:
         return np.concatenate(tensor_list, axis=0)
+def cos(x):
+    if is_theano_object(x):
+        return T.cos(x)
+    else:
+        return np.cos(x)
 def exp(x):
     if is_theano_object(x):
         return T.exp(x)
@@ -809,6 +814,11 @@ def prod(x, *args):
         return T.prod(x, *args)
     else:
         return np.prod(x, *args)
+def sin(x):
+    if is_theano_object(x):
+        return T.sin(x)
+    else:
+        return np.sin(x)
 def sum(x, axis=None, dtype=None, acc_dtype=None, keepdims=np._NoValue):
     if is_theano_object(x):
         result = T.sum(x, axis, dtype, acc_dtype)
