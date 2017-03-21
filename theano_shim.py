@@ -95,9 +95,10 @@ def load(load_theano = False, reraise=False):
             use_theano = True
 
     if use_theano:
+        import theano.ifelse
         import theano.tensor as T
         import theano.tensor as lib
-        import theano.ifelse
+        import theano.tensor.signal.conv
         import theano.tensor.shared_randomstreams  # CPU only
         #from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams  # CPU & GPU
 
@@ -716,20 +717,27 @@ def factorial(n, exact=False):
 
 # TODO: Use fftconvolve if ~500 time bins or more
 
-def conv1d(history_arr, discrete_kernel_arr, mode='valid'):
+def conv1d(history_arr, discrete_kernel_arr, tarr_len, discrete_kernel_shape, mode='valid'):
     """
     Applies the convolution to each component of the history
     and stacks the result into an array
 
     Parameters
     ----------
-    history: ndarray | theano.tensor
+    history_arr : ndarray | theano.tensor
         Return value from indexing history[begin1:end1],
         where history is a Series instance with shape (M,)
-    discrete_kernel: ndarray | theano.tensor
+    discrete_kernel_arr : ndarray | theano.tensor
         Return value from indexing discrete_kernel[begin2:end2],
         where discret_kernel is a Series instance with shape (M, M)
         obtained by calling history.discretize_kernel.
+    tarr_shape : tuple
+        The length of the history's time array. When computing using NumPy,
+        validated agains history_arr.shape[0]
+    discrete_kernel_shape : tuple
+        Shape of the discrete kernel array. Theano can't determine the shape
+        from a tensor, so it is specified separately. When computing using
+        NumPy, this is checked for consistency.
 
     Returns
     -------
@@ -737,11 +745,12 @@ def conv1d(history_arr, discrete_kernel_arr, mode='valid'):
         Result has shape (M, M)
     """
 
-    check(len(history_arr.shape) == 2)
-    output_shape = discrete_kernel_arr.shape[1:]
+    assert(history_arr.ndim == 2)
+    output_shape = discrete_kernel_shape[1:]
     if (discrete_kernel_arr.ndim == 2):
         # Algorithm assumes a "to" axis on the kernel. Add it.
-        add_axes(discrete_kernel_arr, 1, 'before last')
+        discrete_kernel_arr = add_axes(discrete_kernel_arr, 1, 'before last')
+        discrete_kernel_shape = discrete_kernel_shape[0:1] + (1,) + discrete_kernel_shape[1:2]
     else:
         check(discrete_kernel_arr.ndim == 3)
 
@@ -755,21 +764,23 @@ def conv1d(history_arr, discrete_kernel_arr, mode='valid'):
                   [ T.stack(
                        [ T.signal.conv.conv2d(history_arr[:, from_idx:from_idx+1 ],
                                               discrete_kernel_arr[:, to_idx, from_idx:from_idx+1 ],
-                                              image_shape = (len(history_arr._tarr), 1),
-                                              filter_shape = (len(kernel_arr._tarr), 1),
+                                              image_shape = (tarr_len, 1),
+                                              filter_shape = (discrete_kernel_shape[0], 1),
                                               border_mode = mode)[:,0]
-                         for to_idx in T.arange(discrete_kernel_arr.shape[1]) ] )
-                       for from_idx in T.arange(discrete_kernel_arr.shape[2]) ] ).T
+                         for to_idx in np.arange(discrete_kernel_shape[1]) ] )
+                       for from_idx in np.arange(discrete_kernel_shape[2]) ] ).T
     else:
+        assert(discrete_kernel_shape == discrete_kernel.shape)
+        assert(tarr_len == history_arr.shape[0])
         result = np.stack(
                   [ np.stack(
                        [ scipy.signal.convolve(history_arr[:, from_idx ],
-                                            discrete_kernel_arr[:, to_idx, from_idx ],
-                                            mode=mode)
+                                               discrete_kernel_arr[:, to_idx, from_idx ],
+                                               mode=mode)
                          for to_idx in np.arange(discrete_kernel_arr.shape[1]) ] )
                        for from_idx in np.arange(discrete_kernel_arr.shape[2]) ] ).T
 
-    return result.reshape(result.shape[0:1] + output_shape)
+    return result.reshape((tarr_len - discrete_kernel_shape[0] + 1,) + output_shape)
 
 
 
