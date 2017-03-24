@@ -93,6 +93,8 @@ def load(load_theano = False, reraise=False):
                 raise
         else:
             use_theano = True
+    else:
+        use_theano = False
 
     if use_theano:
         import theano.ifelse
@@ -143,6 +145,31 @@ def add_updates(updates):
 def theano_reset():
     logger.info("Clearing Theano updates")
     theano_updates = {}
+
+#######################
+# Print statement
+def print(x, message=""):
+    """
+    Non-Theano version outputs to the logger at the debug level.
+
+    Parameters
+    ----------
+    x:
+        The value of this graph will be output
+    message: string
+        Will be prepended to the output
+    """
+    if is_theano_object(x):
+        msg = "DEBUG - " + message
+        return theano.printing.Print(msg)(x)
+    else:
+        if len(message) > 0 and message[-1] != " ":
+            msg = message + " "
+        else:
+            msg = message
+        #logger.debug(msg + str(x))
+        builtins.print("DEBUG - " + msg + str(x))
+        return x
 
 #######################
 # Assert equivalent
@@ -564,6 +591,7 @@ def set_subtensor(x, y, inplace=False, tolerate_aliasing=False):
     else:
         assert(x.base is not None)
             # Ensure that x is a view of another ndarray
+        assert(x.shape == y.shape)
         x[:] = y
         return x.base
 
@@ -574,6 +602,7 @@ def inc_subtensor(x, y, inplace=False, tolerate_aliasing=False):
     else:
         assert(x.base is not None)
             # Ensure that x is a view of another ndarray
+        assert(x.shape == y.shape)
         x[:] += y
         return x.base
 
@@ -770,7 +799,7 @@ def conv1d(history_arr, discrete_kernel_arr, tarr_len, discrete_kernel_shape, mo
                          for to_idx in np.arange(discrete_kernel_shape[1]) ] )
                        for from_idx in np.arange(discrete_kernel_shape[2]) ] ).T
     else:
-        assert(discrete_kernel_shape == discrete_kernel.shape)
+        assert(discrete_kernel_shape == discrete_kernel_arr.shape)
         assert(tarr_len == history_arr.shape[0])
         result = np.stack(
                   [ np.stack(
@@ -791,7 +820,7 @@ load(load_theano=False)
     # By default, don't load Theano
 
 #######################
-# Straight redirects to NumPy/Theano
+# NumPy functions
 
 def all(x):
     if is_theano_object(x):
@@ -808,6 +837,11 @@ def cos(x):
         return T.cos(x)
     else:
         return np.cos(x)
+def dot(a, b):
+    if is_theano_object(a) or is_theano_object(b):
+        return T.dot(a, b)
+    else:
+        return np.dot(a, b)
 def exp(x):
     if is_theano_object(x):
         return T.exp(x)
@@ -841,7 +875,7 @@ def sin(x):
 def sum(x, axis=None, dtype=None, acc_dtype=None, keepdims=np._NoValue):
     if is_theano_object(x):
         result = T.sum(x, axis, dtype, acc_dtype)
-        if keepdims:
+        if keepdims and keepdims is not np._NoValue:
             if not isinstance(axis, collections.Iterable):
                 axes = [axis]
             else:
