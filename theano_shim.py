@@ -41,7 +41,7 @@ import scipy.signal
 
 logger = logging.getLogger('theano_shim')
 logger.setLevel(logging.INFO)
-_fh = logging.FileHandler("theano_shim_" + str(os.getpid()) + ".log", mode='w')
+_fh = logging.FileHandler("theano_shim.log", mode='a')
 _fh.setLevel(logging.DEBUG)
 _ch = logging.StreamHandler()
 _ch.setLevel(logging.WARNING)
@@ -629,8 +629,8 @@ def add_axes(x, num=1, pos='left'):
     num: int
         Number of axes to add. Default: 1.
     pos: 'before' | 'left' | 'after' | 'right' | 'before last' | int
-        - 'before', 'left' turns a 1D vector into a row vector. (Default)
-        - 'after', 'right' turns a 1D vector into a column vector.
+        - 'before', 'left', 'begin' turns a 1D vector into a row vector. (Default)
+        - 'after', 'right', 'end' turns a 1D vector into a column vector.
         - 'before last' adds axes to the second-last position.
           Equivalent to 'left' on 1D vectors.'.
         - An integer adds the axes before this position
@@ -639,10 +639,10 @@ def add_axes(x, num=1, pos='left'):
             + `x.ndim` : equivalent to 'after'
     """
     if use_theano and isinstance(x, theano.gof.Variable):
-        if pos in ['left', 'before']:
+        if pos in ['left', 'before', 'begin']:
             shuffle_pattern = ['x']*num
             shuffle_pattern.extend(range(x.ndim))
-        elif pos  in ['right', 'after']:
+        elif pos  in ['right', 'after', 'end']:
             shuffle_pattern = list(range(x.ndim))
             shuffle_pattern.extend( ['x']*num )
         elif pos == 'before last':
