@@ -18,7 +18,7 @@ setup(
           'Programming Language :: Python :: 3 :: Only'
       ],
 
-      py_modules=["theano_shim"],
+      packages=["theano_shim"],
 
       install_requires=['numpy', 'scipy']
      )

@@ -31,7 +31,6 @@ Pointers for writing theano switches
       `is_theano_object` convenience methods.
 """
 
-import os
 import logging
 import builtins
 import collections
@@ -41,15 +40,15 @@ import scipy.signal
 
 logger = logging.getLogger('theano_shim')
 logger.setLevel(logging.INFO)
-_fh = logging.FileHandler("theano_shim.log", mode='a')
-_fh.setLevel(logging.DEBUG)
-_ch = logging.StreamHandler()
-_ch.setLevel(logging.WARNING)
-_logging_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-_fh.setFormatter(_logging_formatter)
-_ch.setFormatter(_logging_formatter)
-logger.addHandler(_fh)
-logger.addHandler(_ch)
+# _fh = logging.FileHandler("theano_shim.log", mode='a')
+# _fh.setLevel(logging.DEBUG)
+# _ch = logging.StreamHandler()
+# _ch.setLevel(logging.WARNING)
+# _logging_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# _fh.setFormatter(_logging_formatter)
+# _ch.setFormatter(_logging_formatter)
+# logger.addHandler(_fh)
+# logger.addHandler(_ch)
 
 use_theano = False
 inf = np.inf
@@ -101,6 +100,7 @@ def load(load_theano = False, reraise=False):
         import theano.tensor as T
         import theano.tensor as lib
         import theano.tensor.signal.conv
+        import theano.sparse
         import theano.tensor.shared_randomstreams  # CPU only
         #from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams  # CPU & GPU
 
@@ -229,7 +229,7 @@ def istype(obj, type_str):
         - 'float', 'float32', etc.
         `type_str` can also be an iterable of aforementioned
         strings. Function will return True if `obj` is of any
-        of the specifed types
+        of the specified types
 
     Returns
     -------
@@ -246,15 +246,15 @@ def istype(obj, type_str):
     else:
         return any(ts in obj.dtype for ts in type_str)
 
-def is_theano_variable(var):
-    return use_theano and isinstance(var, theano.tensor.TensorVariable)
-def is_theano_object(obj):
-    return use_theano and isinstance(obj, theano.gof.Variable)
-def is_shared_variable(var):
+def is_theano_variable(*var):
+    return use_theano and any(isinstance(v, theano.tensor.TensorVariable) for v in var)
+def is_theano_object(*obj):
+    return use_theano and any(isinstance(o, theano.gof.Variable) for o in obj)
+def is_shared_variable(*var):
     if use_theano:
-        return isinstance(var, T.sharedvar.SharedVariable)
+        return any(isinstance(v, T.sharedvar.SharedVariable) for v in var)
     else:
-        return isinstance(var, ShimmedShared)
+        return any(isinstance(v, ShimmedShared) for v in var)
 
 #######################
 # Functions to cast to an integer variable
@@ -369,6 +369,7 @@ def abs(x):
             return __builtins__['abs'](add_axes(x.flatten())).reshape(shape)
     else:
         return __builtins__['abs'](x)
+
 #####################
 # Set random functions
 
@@ -385,12 +386,6 @@ class ShimmedRandomStreams:
     def binomial(self, size=(), n=1, p=0.5, ndim=None):
         return np.random.binomial(n, p, size)
 
-################################################
-# Define Theano placeins, which execute
-# equivalent Python code if Theano is not used.
-# Many Python versions take useless arguments,
-# to match the signature of the Theano version.
-################################################
 
 ######################
 # Logical and comparison operators
@@ -463,7 +458,6 @@ def or_(a, b):
         return T.or_(a, b)
     else:
         return np.logical_or(a, b)
-
 
 ######################
 # Conditionals
@@ -629,8 +623,8 @@ def add_axes(x, num=1, pos='left'):
     num: int
         Number of axes to add. Default: 1.
     pos: 'before' | 'left' | 'after' | 'right' | 'before last' | int
-        - 'before', 'left', 'begin' turns a 1D vector into a row vector. (Default)
-        - 'after', 'right', 'end' turns a 1D vector into a column vector.
+        - 'before', 'left', 'begin', 'last' turns a 1D vector into a row vector. (Default)
+        - 'after', 'right', 'end', 'first' turns a 1D vector into a column vector.
         - 'before last' adds axes to the second-last position.
           Equivalent to 'left' on 1D vectors.'.
         - An integer adds the axes before this position
@@ -639,10 +633,10 @@ def add_axes(x, num=1, pos='left'):
             + `x.ndim` : equivalent to 'after'
     """
     if use_theano and isinstance(x, theano.gof.Variable):
-        if pos in ['left', 'before', 'begin']:
+        if pos in ['left', 'before', 'begin', 'first']:
             shuffle_pattern = ['x']*num
             shuffle_pattern.extend(range(x.ndim))
-        elif pos  in ['right', 'after', 'end']:
+        elif pos  in ['right', 'after', 'end', 'last']:
             shuffle_pattern = list(range(x.ndim))
             shuffle_pattern.extend( ['x']*num )
         elif pos == 'before last':
@@ -657,16 +651,16 @@ def add_axes(x, num=1, pos='left'):
         return x.dimshuffle(shuffle_pattern)
     else:
         x = np.asarray(x)
-        if pos in ['left', 'before']:
+        if pos in ['left', 'before', 'begin', 'first']:
             return x.reshape( (1,)*num + x.shape )
-        elif pos in ['right', 'after']:
+        elif pos in ['right', 'after', 'end', 'last']:
             return x.reshape( x.shape + (1,)*num )
         elif pos == 'before last':
             return x.reshape( x.shape[:-1] + (1,)*num + x.shape[-1:] )
         else:
             try:
                 return x.reshape( x.shape[:pos] + (1,)*num + x.shape[pos:] )
-            except ValueError:
+            except TypeError:
                 raise ValueError("Unrecognized argument {} for pos.".format(pos))
 
 def moveaxis(a, source, destination):
@@ -862,6 +856,11 @@ def max(x):
         return T.max(x)
     else:
         return np.max(x)
+def ones(shape, dtype):
+    if is_theano_object(x):
+        return T.ones(shape, dtype)
+    else:
+        return np.ones(shape, dtype)
 def prod(x, *args):
     if is_theano_object(x):
         return T.prod(x, *args)
@@ -872,6 +871,11 @@ def sin(x):
         return T.sin(x)
     else:
         return np.sin(x)
+def stack(tensors, axis=0):
+    if is_theano_object(tensors):
+        return T.stack(tensors, axis)
+    else:
+        return np.stack(tensors, axis)
 def sum(x, axis=None, dtype=None, acc_dtype=None, keepdims=np._NoValue):
     if is_theano_object(x):
         result = T.sum(x, axis, dtype, acc_dtype)
@@ -890,6 +894,11 @@ def tile(x, reps, ndim=None):
         return T.tile(x, reps, ndim)
     else:
         return np.tile(x, reps)
+def zero(shape, dtype):
+    if is_theano_object(shape):
+        return T.zeros(shape, dtype)
+    else:
+        return np.zeros(shape, dtype)
 
 # The following is code that could be used for automatic
 # redirects on a class
