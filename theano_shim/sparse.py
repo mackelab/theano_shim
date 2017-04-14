@@ -1,4 +1,5 @@
-import collections
+import collections.abc
+import types
 import scipy as sp
 import scipy.sparse
 
@@ -66,6 +67,9 @@ def coo_matrix(name, shape, dtype=None):
             return sp.sparse.coo_matrix(shape, dtype=dtype)
 
 def hstack(blocks, format=None, dtype=None):
+    if isinstance(blocks, types.GeneratorType):
+        raise ValueError("shim.sparse.hstack doesn't support generator arguments at the moment."
+                         "Please use a list instead.")
     if ( ( isinstance(blocks, collections.abc.Iterable)
            and is_theano_object(*blocks) )
          or is_theano_object(blocks) ):
@@ -74,6 +78,9 @@ def hstack(blocks, format=None, dtype=None):
         return sp.sparse.hstack(blocks, format, dtype)
 
 def vstack(blocks, format=None, dtype=None):
+    if isinstance(blocks, types.GeneratorType):
+        raise ValueError("shim.sparse.vstack doesn't support generator arguments at the moment."
+                         "Please use a list instead.")
     if ( ( isinstance(blocks, collections.abc.Iterable)
            and is_theano_object(*blocks) )
          or is_theano_object(blocks) ):

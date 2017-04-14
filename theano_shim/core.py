@@ -33,7 +33,7 @@ Pointers for writing theano switches
 
 import logging
 import builtins
-import collections
+import collections.abc
 import numpy as np
 import scipy as sp
 import scipy.signal
@@ -880,7 +880,7 @@ def sum(x, axis=None, dtype=None, acc_dtype=None, keepdims=np._NoValue):
     if is_theano_object(x):
         result = T.sum(x, axis, dtype, acc_dtype)
         if keepdims and keepdims is not np._NoValue:
-            if not isinstance(axis, collections.Iterable):
+            if not isinstance(axis, collections.abc.Iterable):
                 axes = [axis]
             else:
                 axes = sorted(axis)
