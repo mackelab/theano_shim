@@ -121,15 +121,15 @@ def getT():
 
 def add_update(variable, value):
     logger.info("Adding Theano update : {} -> {}".format(variable.name, str(value)))
-    if variable in self.theano.updates:
-        raise ValueError("Cannot update the same shared variable twice. "
-                         "It should be used in a `theano.function` call, and then "
-                         "cleared with `shim.theano_reset()` before being "
-                         "updated again.")
-    if not is_shared_variable(variable):
+    # if variable in self.theano.updates:
+    #     raise ValueError("Cannot update the same shared variable twice. "
+    #                      "It should be used in a `theano.function` call, and then "
+    #                      "cleared with `shim.theano_reset()` before being "
+    #                      "updated again.")
+    if not isshared(variable):
         raise ValueError("The updates mechanism only applies to shared variables.")
 
-    self.theano_updates[variable] = value
+    cf.theano_updates[variable] = value
 
 def add_updates(updates):
     """
@@ -146,9 +146,12 @@ def add_updates(updates):
         for key, val in updates:
             add_update(key, val)
 
-def theano_reset():
+def get_updates():
+    return cf.theano_updates
+
+def reset_updates():
     logger.info("Clearing Theano updates")
-    theano_updates = {}
+    cf.theano_updates = {}
 
 #######################
 # Print statement
@@ -255,38 +258,86 @@ def istype(obj, type_str):
     else:
         return any(ts in obj.dtype for ts in type_str)
 
+def _expand_args(arglst):
+    """
+    Recursively expand slices, iterables, dictionaries into a list of scalar data type.
+    Scalars are returned as a 1 element list.
+    """
+    for arg in arglst:
+        if isinstance(arg, theano.gof.Variable):
+            # Theano variables aren't iterable
+            yield arg
+        elif isinstance(arg, slice):
+            yield arg.start
+            yield arg.stop
+            yield arg.step
+        elif isinstance(arg, dict):
+            for key in arg.keys():
+                yield key
+            for val in arg.values():
+                yield from nwlst.extend(_expand_args(val))
+        elif isinstance(arg, collections.abc.Iterable):
+            yield from _expand_args(arg)
+        else:
+            yield arg
+
 def is_theano_variable(*var):
-    return cf.use_theano and any(isinstance(v, theano.tensor.TensorVariable) for v in var)
+    return cf.use_theano and any(isinstance(v, theano.tensor.TensorVariable)
+                                 for v in _expand_args(var))
 def is_theano_object(*obj):
-    return cf.use_theano and any(isinstance(o, theano.gof.Variable) for o in obj)
-def is_shared_variable(*var):
+    return cf.use_theano and any(isinstance(o, theano.gof.Variable)
+                                 for o in _expand_args(obj))
+def isshared(*var):
     if cf.use_theano:
-        return any(isinstance(v, T.sharedvar.SharedVariable) for v in var)
+        return any(isinstance(v, (T.sharedvar.SharedVariable, ShimmedShared))
+                   for v in _expand_args(var))
     else:
-        return any(isinstance(v, ShimmedShared) for v in var)
+        return any(isinstance(v, ShimmedShared)
+                   for v in _expand_args(var))
 
 #######################
-# Functions to cast to an integer variable
+# Casting functions
+def cast(x, dtype):
+    if is_theano_object(x):
+        return T.cast(x, dtype)
+    else:
+        val = ( np.int8(x) if dtype == 'int8'
+                 else np.int16(x) if dtype == 'int16'
+                 else np.int32(x) if dtype == 'int32'
+                 else np.int64(x) if dtype == 'int64'
+                 else np.float32(x) if dtype == 'float32'
+                 else np.float64(x) if dtype == 'float64'
+                 else None )
+        if val is None:
+            raise ValueError("Unrecognized type {}.".format(dtype))
+        return val
+
 def cast_int8(x):
     if is_theano_object(x):
         return T.cast(x, 'int8')
     else:
         return np.int8(x)
 def cast_int16(x):
-    if cf.use_theano and isinstance(x, theano.gof.Variable):
+    if is_theano_object(x):
         return T.cast(x, 'int16')
     else:
         return np.int16(x)
 def cast_int32(x):
-    if cf.use_theano and isinstance(x, theano.gof.Variable):
+    if is_theano_object(x):
         return T.cast(x, 'int32')
     else:
         return np.int32(x)
 def cast_int64(x):
-    if cf.use_theano and isinstance(x, theano.gof.Variable):
+    if is_theano_object(x):
         return T.cast(x, 'int64')
     else:
         return np.int64(x)
+
+def cast_floatX(x):
+    if is_theano_object(x):
+        return T.cast(x, theano.config.floatX)
+    else:
+        return np.float(x)
 
 #####################
 # Simple convenience functions
@@ -317,6 +368,10 @@ def asarray(x, dtype=None):
         return np.asarray(x, dtype=dtype)
 
 def isscalar(x):
+    """
+    Return True if `x` is a scalar.
+    Note that in contrast to Numpy's isscalar, this returns True for 0-dim arrays.
+    """
     arrayed_x = asarray(x)
     return asarray(x).ndim == 0 and arrayed_x.dtype != 'object'
 
@@ -568,11 +623,15 @@ class ShimmedShared(np.ndarray):
             self[:] = new_value
         except IndexError:
             # Scalars will fail on the above
-            assert(np.isscalar(new_value))
+            assert(isscalar(new_value))
+                # np.isscalar will fail on 0-dim arrays; isscalar works
             self = super(ShimmedShared, self).__setitem__(None, new_value)
 
 def shared(value, name=None, strict=False, allow_downcast=None, **kwargs):
     value = np.asarray(value)
+    if 'dtype' in kwargs:
+        logger.warning("You passed the keyword 'dtype' to the shared constructor. "
+                       "Theano doesn't support this keyword for shared variables.")
     if cf.use_theano:
         # Unless a broadcast pattern is specified, we create one to match
         # the NumPy behaviour (broadcastable on all axes of dimension 1).
@@ -694,7 +753,7 @@ def pad(array, array_shape, pad_width, mode='constant', **kwargs):
             # If this fails, than the Theano code will also fail
             # (perhaps cryptically).
         return np.pad(array, pad_width, mode, **kwargs)
-    elif is_shared_variable(array):
+    elif isshared(array):
         assert(array.get_value(borrow=True).shape == array_shape)
         return np.pad(array.get_value(borrow=True), pad_width, mode, **kwargs)
     else:
