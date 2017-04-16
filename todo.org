@@ -1,0 +1,2 @@
+* Make shim.sparse optional load.
+  Only Load scipy.sparse and theano.sparse if it is loaded.
