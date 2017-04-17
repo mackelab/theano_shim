@@ -115,6 +115,30 @@ def getT():
     else:
         return T
 
+##########################
+# Querying the computational graph
+
+def is_computable(varlist, with_inputs=None):
+    """
+    Returns True if the variables in varlist can be numerically evaluated
+    using only the inputs in `with_inputs`. In other words, the computational
+    graph associated to varlist is composed only of constants and shared variables,
+    along with the symbolic variables in `with_inputs`.
+    If varlist is not a Theano graph, it is always computable.
+    """
+    if ( not isinstance(varlist, collections.abc.Iterable)
+         or isinstance(varlist, str) ):
+        raise ValueError("theano_shim.is_computable requires a list as first argument.")
+    if with_inputs is None:
+        with_inputs = []
+    computable = True
+    for var in varlist:
+        if is_theano_variable(var):
+            if not bool( set(theano.gof.graph.inputs(varlist)).difference(with_inputs) ):
+                computable = False
+                break
+    return computable
+
 
 ##########################
 # Managing theano updates
@@ -264,7 +288,7 @@ def _expand_args(arglst):
     Scalars are returned as a 1 element list.
     """
     for arg in arglst:
-        if isinstance(arg, theano.gof.Variable):
+        if cf.use_theano and isinstance(arg, theano.gof.Variable):
             # Theano variables aren't iterable
             yield arg
         elif isinstance(arg, slice):
@@ -276,6 +300,11 @@ def _expand_args(arglst):
                 yield key
             for val in arg.values():
                 yield from nwlst.extend(_expand_args(val))
+        elif isinstance(arg, np.ndarray):
+            if arg.ndim == 0:
+                yield arg  # can't iterate over a 0-dim array
+            else:
+                yield from _expand_args(arg)
         elif isinstance(arg, collections.abc.Iterable):
             yield from _expand_args(arg)
         else:
@@ -358,14 +387,33 @@ def asvariable(x, dtype=None):
     else:
         return np.asarray(x, dtype=dtype)
 
-def asarray(x, dtype=None):
+def asarray(x, dtype=None, broadcastable=None):
+    """Make x array-like.
+    Note that if broadcastable is not none, and that Theano is loaded,
+    the return value will always be a Theano variable, even if x is
+    pure Python or Numpy. This is because `broadcastable` is a Theano-only
+    property.
+    """
+
     if cf.use_theano and isinstance(x, theano.gof.Variable):
         if dtype is not None:
-            return T.cast(T.as_tensor_variable(x), dtype)
+            retval = T.cast(T.as_tensor_variable(x), dtype)
         else:
-            return T.as_tensor_variable(x)
+            retval = T.as_tensor_variable(x)
     else:
-        return np.asarray(x, dtype=dtype)
+        retval = np.asarray(x, dtype=dtype)
+        if cf.use_theano and broadcastable is not None:
+            # Only Theano variables carry broadcasting information
+            retval = T.as_tensor_variable(retval)
+
+    if broadcastable is not None:
+        for i, (vc, vn) in enumerate(zip(retval.broadcastable,
+                                            broadcastable)):
+            if vc != vn and vn:
+                retval = T.addbroadcast(retval, i)
+            elif vc != vn and not vn:
+                retval = T.unbroadcast(retval, i)
+    return retval
 
 def isscalar(x):
     """
@@ -678,6 +726,12 @@ def get_ndims(x):
 ######################
 # Axis manipulation functions
 # E.g. to treat a scalar as a 1x1 matrix
+
+def reshape(array, newshape, ndim=None):
+    if is_theano_object(array):
+        return array.reshape(newshape, ndim)
+    else:
+        return array.reshape(newshape)
 
 def add_axes(x, num=1, pos='left'):
     """
