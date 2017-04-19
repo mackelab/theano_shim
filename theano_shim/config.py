@@ -5,8 +5,8 @@ Global configuration variables
 use_theano = False
 inf = None
 
-theano_updates = {}
-    # Stores a Theano update dictionary. See below for use
+theano_updates = OrderedDict()
+    # Stores a Theano update dictionary
 
 lib = None
     # DEPRECATION WARNING: lib will soon be removed

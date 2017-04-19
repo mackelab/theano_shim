@@ -179,7 +179,7 @@ def reset_updates():
 
 #######################
 # Print statement
-def print(x, message=""):
+def print(x, message="", printfn='print'):
     """
     Non-Theano version outputs to the logger at the debug level.
 
@@ -189,10 +189,29 @@ def print(x, message=""):
         The value of this graph will be output
     message: string
         Will be prepended to the output
+    printfn: string
+        Determines the function used to print the variable; only
+        has an effect on Theano variables. Possible values are:
+        - 'print' (default): use theano.printing.Print
+        - 'debugprint': use theano.printing.debugprint
+        - 'eval' : try to call x's `eval` method. If successful,
+          print the output, otherwise fall back on theano.printing.Print
     """
     if is_theano_object(x):
         msg = "DEBUG - " + message
-        return theano.printing.Print(msg)(x)
+        if printfn == 'print':
+            return theano.printing.Print(msg)(x)
+        elif printfn == 'debugprint':
+            print(msg)
+            return theano.printing.debugprint(x)
+        elif printfn == 'eval':
+            try:
+                val = x.eval()
+            except theano.gof.fg.MissingInputError:
+                return theano.printing.Print(msg)(x)
+            else:
+                print(msg + " Value of {}: {}".format(str(x), val))
+                return val
     else:
         if len(message) > 0 and message[-1] != " ":
             msg = message + " "
@@ -287,9 +306,14 @@ def _expand_args(arglst):
     Recursively expand slices, iterables, dictionaries into a list of scalar data type.
     Scalars are returned as a 1 element list.
     """
+    if not isinstance(arglst, collections.abc.Iterable):
+        arglst = [arglst]
     for arg in arglst:
         if cf.use_theano and isinstance(arg, theano.gof.Variable):
             # Theano variables aren't iterable
+            yield arg
+        elif isinstance(arg, str):
+            # Don't iterate over strings
             yield arg
         elif isinstance(arg, slice):
             yield arg.start
@@ -451,7 +475,9 @@ def flatten(x, outdim=1):
 
 def largest(*args):
     """Element-wise max operation."""
-    assert(len(args) >= 2)
+    assert(len(args) >= 0)
+    if len(args) == 1:
+        return args[0]
     if cf.use_theano and any(isinstance(arg, theano.gof.Variable) for arg in args):
         return T.largest(*args)
     else:
@@ -462,7 +488,9 @@ def largest(*args):
 
 def smallest(*args):
     """Element-wise min operation."""
-    assert(len(args) >= 2)
+    assert(len(args) > 0)
+    if len(args) == 0:
+        return args[0]
     if cf.use_theano and any(isinstance(arg, theano.gof.Variable) for arg in args):
         return T.smallest(*args)
     else:
