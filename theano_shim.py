@@ -800,6 +800,12 @@ def dot(x, y):
         return T.dot(x, y)
     else:
         return np.dot(x, y)
+def sum(x):
+    # TODO: Add additional arguments
+    if is_theano_object(x):
+        return T.sum(x)
+    else:
+        return np.sum(x)
 def exp(x):
     if is_theano_object(x):
         return T.exp(x)
