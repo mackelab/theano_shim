@@ -113,6 +113,15 @@ def load(load_theano = False, reraise=False):
         RandomStreams = ShimmedRandomStreams
 
 ##########################
+# Define a common interface for numeric types
+from typing import Union
+if use_theano:
+    Numeric = Union[np.narray, T.TensorVariable]
+else:
+    Numeric = Union[np.ndarray]
+
+
+##########################
 # Managing theano updates
 
 def add_update(variable, value):
@@ -812,6 +821,32 @@ def conv1d(history_arr, discrete_kernel_arr, tarr_len, discrete_kernel_shape, mo
     return result.reshape((tarr_len - discrete_kernel_shape[0] + 1,) + output_shape)
 
 
+def lfilter(size, b, a, x, *args, **kwargs):
+    """
+    Wrapper for the linear filter operator implemented by scipy.signal.lfilter
+
+    At the moment, the implementation is restricted to the case a = 1.
+
+    :param b: array of size M. The moving average coefficients.
+    :param a: array of size N. The autoregressive coefficients.
+    :param x: array.
+    :param size: tuple (M, N)
+    :return:
+    """
+
+    sym_a = is_theano_object(a)
+    sym_b = is_theano_object(b)
+    sym_x = is_theano_object(x)
+
+    M, N = size
+    if sym_b or sym_x:
+        s = x * b[0]
+        for tau in range(1, M):
+            u = x[:-tau] * b[tau]
+            s = T.inc_subtensor(s[tau:], u)
+    else:
+	    s = scipy.signal.lfilter(b, a, x, *args, **kwargs)
+    return s
 
 ################################
 # Module initialization
@@ -832,16 +867,22 @@ def concatenate(tensor_list, axis=0):
         return T.concatenate(tensor_list, axis=0)
     else:
         return np.concatenate(tensor_list, axis=0)
+def dot(x, y):
+    if is_theano_object(x) or is_theano_object(y):
+        return T.dot(x, y)
+    else:
+        return np.dot(x, y)
+def sum(x):
+    # TODO: Add additional arguments
+    if is_theano_object(x):
+        return T.sum(x)
+    else:
+        return np.sum(x)
 def cos(x):
     if is_theano_object(x):
         return T.cos(x)
     else:
         return np.cos(x)
-def dot(a, b):
-    if is_theano_object(a) or is_theano_object(b):
-        return T.dot(a, b)
-    else:
-        return np.dot(a, b)
 def exp(x):
     if is_theano_object(x):
         return T.exp(x)
