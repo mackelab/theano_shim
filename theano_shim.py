@@ -34,13 +34,14 @@ Pointers for writing theano switches
 import os
 import logging
 import builtins
+import collections
 import numpy as np
+import scipy as sp
 import scipy.signal
 
 logger = logging.getLogger('theano_shim')
 logger.setLevel(logging.INFO)
-# _fh = logging.FileHandler("theano_shim_" + str(os.getpid()) + ".log", mode='w')
-_fh = logging.FileHandler("theano_shim.log", mode='w')
+_fh = logging.FileHandler("theano_shim.log", mode='a')
 _fh.setLevel(logging.DEBUG)
 _ch = logging.StreamHandler()
 _ch.setLevel(logging.WARNING)
@@ -92,11 +93,14 @@ def load(load_theano = False, reraise=False):
                 raise
         else:
             use_theano = True
+    else:
+        use_theano = False
 
     if use_theano:
+        import theano.ifelse
         import theano.tensor as T
         import theano.tensor as lib
-        import theano.ifelse
+        import theano.tensor.signal.conv
         import theano.tensor.shared_randomstreams  # CPU only
         #from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams  # CPU & GPU
 
@@ -127,7 +131,7 @@ def add_update(variable, value):
                          "It should be used in a `theano.function` call, and then "
                          "cleared with `shim.theano_reset()` before being "
                          "updated again.")
-    if not is_shared_var(variable):
+    if not is_shared_variable(variable):
         raise ValueError("The updates mechanism only applies to shared variables.")
 
     self.theano_updates[variable] = value
@@ -150,6 +154,31 @@ def add_updates(updates):
 def theano_reset():
     logger.info("Clearing Theano updates")
     theano_updates = {}
+
+#######################
+# Print statement
+def print(x, message=""):
+    """
+    Non-Theano version outputs to the logger at the debug level.
+
+    Parameters
+    ----------
+    x:
+        The value of this graph will be output
+    message: string
+        Will be prepended to the output
+    """
+    if is_theano_object(x):
+        msg = "DEBUG - " + message
+        return theano.printing.Print(msg)(x)
+    else:
+        if len(message) > 0 and message[-1] != " ":
+            msg = message + " "
+        else:
+            msg = message
+        #logger.debug(msg + str(x))
+        builtins.print("DEBUG - " + msg + str(x))
+        return x
 
 #######################
 # Assert equivalent
@@ -226,11 +255,11 @@ def istype(obj, type_str):
     else:
         return any(ts in obj.dtype for ts in type_str)
 
-def is_theano_var(var):
+def is_theano_variable(var):
     return use_theano and isinstance(var, theano.tensor.TensorVariable)
 def is_theano_object(obj):
     return use_theano and isinstance(obj, theano.gof.Variable)
-def is_shared_var(var):
+def is_shared_variable(var):
     if use_theano:
         return isinstance(var, T.sharedvar.SharedVariable)
     else:
@@ -243,7 +272,6 @@ def cast_int8(x):
         return T.cast(x, 'int8')
     else:
         return np.int8(x)
-
 def cast_int16(x):
     if use_theano and isinstance(x, theano.gof.Variable):
         return T.cast(x, 'int16')
@@ -509,7 +537,7 @@ class ShimmedShared(np.ndarray):
     # for indications on subclassing ndarray
 
     def __new__(cls, value, name=None, strict=False, allow_downcast=None, **kwargs):
-        obj = np.asarray(value).view(cls)
+        obj = np.asarray(value).view(cls).copy()
         obj.name = name
         return obj
 
@@ -530,7 +558,19 @@ class ShimmedShared(np.ndarray):
             # On values obtained by get_value, equality testing shold
             # follow the usual rules for arrays, hence the view(np.ndarray)
     def set_value(self, new_value, borrow=False):
+        """
+        If `allow_resize` is false (default), will raise an error if
+        new_value has a different shape than the stored variable.
+        """
+        new_value = np.asarray(new_value)
         try:
+            if self.shape != new_value.shape:
+                self.resize(new_value.shape, refcheck=False)
+                # refcheck is necessary to get this to work, but bypasses
+                # the reference checks. Reference errors might occur if
+                # a reference to this ShimmedShared variable exists elsewhere,
+                # and we try to access it after the resize. This is the kind
+                # of thing you shouldn't do anyway with Theano variables.
             self[:] = new_value
         except IndexError:
             # Scalars will fail on the above
@@ -538,10 +578,17 @@ class ShimmedShared(np.ndarray):
             self = super(ShimmedShared, self).__setitem__(None, new_value)
 
 def shared(value, name=None, strict=False, allow_downcast=None, **kwargs):
+    value = np.asarray(value)
     if use_theano:
-        return theano.shared(value, name, strict, allow_downcast, **kwargs)
+        # Unless a broadcast pattern is specified, we create one to match
+        # the NumPy behaviour (broadcastable on all axes of dimension 1).
+        broadcast_pattern = kwargs.pop('broadcastable', None)
+        if broadcast_pattern is None:
+            broadcast_pattern = tuple(True if s==1 else False for s in value.shape)
+        return theano.shared(value, name, strict, allow_downcast,
+                             broadcastable=broadcast_pattern, **kwargs)
     else:
-        return ShimmedShared(np.asarray(value), name, strict, allow_downcast, **kwargs)
+        return ShimmedShared(value, name, strict, allow_downcast, **kwargs)
 
 
 ######################
@@ -553,6 +600,7 @@ def set_subtensor(x, y, inplace=False, tolerate_aliasing=False):
     else:
         assert(x.base is not None)
             # Ensure that x is a view of another ndarray
+        assert(x.shape == y.shape)
         x[:] = y
         return x.base
 
@@ -563,6 +611,7 @@ def inc_subtensor(x, y, inplace=False, tolerate_aliasing=False):
     else:
         assert(x.base is not None)
             # Ensure that x is a view of another ndarray
+        assert(x.shape == y.shape)
         x[:] += y
         return x.base
 
@@ -589,8 +638,8 @@ def add_axes(x, num=1, pos='left'):
     num: int
         Number of axes to add. Default: 1.
     pos: 'before' | 'left' | 'after' | 'right' | 'before last' | int
-        - 'before', 'left' turns a 1D vector into a row vector. (Default)
-        - 'after', 'right' turns a 1D vector into a column vector.
+        - 'before', 'left', 'begin' turns a 1D vector into a row vector. (Default)
+        - 'after', 'right', 'end' turns a 1D vector into a column vector.
         - 'before last' adds axes to the second-last position.
           Equivalent to 'left' on 1D vectors.'.
         - An integer adds the axes before this position
@@ -599,10 +648,10 @@ def add_axes(x, num=1, pos='left'):
             + `x.ndim` : equivalent to 'after'
     """
     if use_theano and isinstance(x, theano.gof.Variable):
-        if pos in ['left', 'before']:
+        if pos in ['left', 'before', 'begin']:
             shuffle_pattern = ['x']*num
             shuffle_pattern.extend(range(x.ndim))
-        elif pos  in ['right', 'after']:
+        elif pos  in ['right', 'after', 'end']:
             shuffle_pattern = list(range(x.ndim))
             shuffle_pattern.extend( ['x']*num )
         elif pos == 'before last':
@@ -649,8 +698,11 @@ def pad(array, array_shape, pad_width, mode='constant', **kwargs):
     if not is_theano_object(array):
         assert(array.shape == array_shape)
             # If this fails, than the Theano code will also fail
-            # (and it may not be obvious why).
+            # (perhaps cryptically).
         return np.pad(array, pad_width, mode, **kwargs)
+    elif is_shared_variable(array):
+        assert(array.get_value(borrow=True).shape == array_shape)
+        return np.pad(array.get_value(borrow=True), pad_width, mode, **kwargs)
     else:
         def expand_arg(arg):
             if isscalar(arg):
@@ -685,7 +737,17 @@ def pad(array, array_shape, pad_width, mode='constant', **kwargs):
         return res
 
 
+########################
+# Functions from scipy.misc
 
+def factorial(n, exact=False):
+    """Note: the Theano version uses `gamma` regardless of `exact`"""
+    assert(istype(n, 'int'))
+    check((n >= 0).all())
+    if is_theano_object(n):
+        return T.gamma(n+1)
+    else:
+        return sp.misc.factorial(n, exact)
 
 
 ########################
@@ -693,20 +755,27 @@ def pad(array, array_shape, pad_width, mode='constant', **kwargs):
 
 # TODO: Use fftconvolve if ~500 time bins or more
 
-def conv1d(history_arr, discrete_kernel_arr, mode='valid'):
+def conv1d(history_arr, discrete_kernel_arr, tarr_len, discrete_kernel_shape, mode='valid'):
     """
     Applies the convolution to each component of the history
     and stacks the result into an array
 
     Parameters
     ----------
-    history: ndarray | theano.tensor
+    history_arr : ndarray | theano.tensor
         Return value from indexing history[begin1:end1],
         where history is a Series instance with shape (M,)
-    discrete_kernel: ndarray | theano.tensor
+    discrete_kernel_arr : ndarray | theano.tensor
         Return value from indexing discrete_kernel[begin2:end2],
         where discret_kernel is a Series instance with shape (M, M)
         obtained by calling history.discretize_kernel.
+    tarr_shape : tuple
+        The length of the history's time array. When computing using NumPy,
+        validated agains history_arr.shape[0]
+    discrete_kernel_shape : tuple
+        Shape of the discrete kernel array. Theano can't determine the shape
+        from a tensor, so it is specified separately. When computing using
+        NumPy, this is checked for consistency.
 
     Returns
     -------
@@ -714,11 +783,12 @@ def conv1d(history_arr, discrete_kernel_arr, mode='valid'):
         Result has shape (M, M)
     """
 
-    check(len(history_arr.shape) == 2)
-    output_shape = discrete_kernel_arr.shape[1:]
+    assert(history_arr.ndim == 2)
+    output_shape = discrete_kernel_shape[1:]
     if (discrete_kernel_arr.ndim == 2):
         # Algorithm assumes a "to" axis on the kernel. Add it.
-        add_axes(discrete_kernel_arr, 1, 'before last')
+        discrete_kernel_arr = add_axes(discrete_kernel_arr, 1, 'before last')
+        discrete_kernel_shape = discrete_kernel_shape[0:1] + (1,) + discrete_kernel_shape[1:2]
     else:
         check(discrete_kernel_arr.ndim == 3)
 
@@ -732,21 +802,23 @@ def conv1d(history_arr, discrete_kernel_arr, mode='valid'):
                   [ T.stack(
                        [ T.signal.conv.conv2d(history_arr[:, from_idx:from_idx+1 ],
                                               discrete_kernel_arr[:, to_idx, from_idx:from_idx+1 ],
-                                              image_shape = (len(history_arr._tarr), 1),
-                                              filter_shape = (len(kernel_arr._tarr), 1),
+                                              image_shape = (tarr_len, 1),
+                                              filter_shape = (discrete_kernel_shape[0], 1),
                                               border_mode = mode)[:,0]
-                         for to_idx in T.arange(discrete_kernel_arr.shape[1]) ] )
-                       for from_idx in T.arange(discrete_kernel_arr.shape[2]) ] ).T
+                         for to_idx in np.arange(discrete_kernel_shape[1]) ] )
+                       for from_idx in np.arange(discrete_kernel_shape[2]) ] ).T
     else:
+        assert(discrete_kernel_shape == discrete_kernel_arr.shape)
+        assert(tarr_len == history_arr.shape[0])
         result = np.stack(
                   [ np.stack(
                        [ scipy.signal.convolve(history_arr[:, from_idx ],
-                                            discrete_kernel_arr[:, to_idx, from_idx ],
-                                            mode=mode)
+                                               discrete_kernel_arr[:, to_idx, from_idx ],
+                                               mode=mode)
                          for to_idx in np.arange(discrete_kernel_arr.shape[1]) ] )
                        for from_idx in np.arange(discrete_kernel_arr.shape[2]) ] ).T
 
-    return result.reshape(result.shape[0:1] + output_shape)
+    return result.reshape((tarr_len - discrete_kernel_shape[0] + 1,) + output_shape)
 
 
 def lfilter(size, b, a, x, *args, **kwargs):
@@ -783,7 +855,7 @@ load(load_theano=False)
     # By default, don't load Theano
 
 #######################
-# Straight redirects to NumPy/Theano
+# NumPy functions
 
 def all(x):
     if is_theano_object(x):
@@ -806,11 +878,21 @@ def sum(x):
         return T.sum(x)
     else:
         return np.sum(x)
+def cos(x):
+    if is_theano_object(x):
+        return T.cos(x)
+    else:
+        return np.cos(x)
 def exp(x):
     if is_theano_object(x):
         return T.exp(x)
     else:
         return np.exp(x)
+def log(x):
+    if is_theano_object(x):
+        return T.log(x)
+    else:
+        return np.log(x)
 def min(x):
     if is_theano_object(x):
         return T.min(x)
@@ -826,6 +908,24 @@ def prod(x, *args):
         return T.prod(x, *args)
     else:
         return np.prod(x, *args)
+def sin(x):
+    if is_theano_object(x):
+        return T.sin(x)
+    else:
+        return np.sin(x)
+def sum(x, axis=None, dtype=None, acc_dtype=None, keepdims=np._NoValue):
+    if is_theano_object(x):
+        result = T.sum(x, axis, dtype, acc_dtype)
+        if keepdims and keepdims is not np._NoValue:
+            if not isinstance(axis, collections.Iterable):
+                axes = [axis]
+            else:
+                axes = sorted(axis)
+            for axis in axes:
+                result = add_axes(result, pos=axis)
+        return result
+    else:
+        return np.sum(x, axis=axis, dtype=dtype, keepdims=keepdims)
 def tile(x, reps, ndim=None):
     if is_theano_object(x):
         return T.tile(x, reps, ndim)
