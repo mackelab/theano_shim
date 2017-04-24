@@ -39,7 +39,8 @@ import scipy.signal
 
 logger = logging.getLogger('theano_shim')
 logger.setLevel(logging.INFO)
-_fh = logging.FileHandler("theano_shim_" + str(os.getpid()) + ".log", mode='w')
+# _fh = logging.FileHandler("theano_shim_" + str(os.getpid()) + ".log", mode='w')
+_fh = logging.FileHandler("theano_shim.log", mode='w')
 _fh.setLevel(logging.DEBUG)
 _ch = logging.StreamHandler()
 _ch.setLevel(logging.WARNING)
@@ -106,6 +107,15 @@ def load(load_theano = False, reraise=False):
         import numpy as lib
         inf = np.inf
         RandomStreams = ShimmedRandomStreams
+
+##########################
+# Define a common interface for numeric types
+from typing import Union
+if use_theano:
+    Numeric = Union[np.narray, T.TensorVariable]
+else:
+    Numeric = Union[np.ndarray]
+
 
 ##########################
 # Managing theano updates
@@ -739,15 +749,32 @@ def conv1d(history_arr, discrete_kernel_arr, mode='valid'):
     return result.reshape(result.shape[0:1] + output_shape)
 
 
-def conv1d_(h, x, h_size=None):
-	if is_theano_object(h) or is_theano_object(x):
-		s = x * h[0]
-		for tau in range(1, h_size):
-			u = x[:-tau] * h[tau]
-			s = T.inc_subtensor(s[tau:], u)
-	else:
-		s = scipy.signal.lfilter(h, 1, x)
-	return s
+def lfilter(size, b, a, x, *args, **kwargs):
+    """
+    Wrapper for the linear filter operator implemented by scipy.signal.lfilter
+
+    At the moment, the implementation is restricted to the case a = 1.
+
+    :param b: array of size M. The moving average coefficients.
+    :param a: array of size N. The autoregressive coefficients.
+    :param x: array.
+    :param size: tuple (M, N)
+    :return:
+    """
+
+    sym_a = is_theano_object(a)
+    sym_b = is_theano_object(b)
+    sym_x = is_theano_object(x)
+
+    M, N = size
+    if sym_b or sym_x:
+        s = x * b[0]
+        for tau in range(1, M):
+            u = x[:-tau] * b[tau]
+            s = T.inc_subtensor(s[tau:], u)
+    else:
+	    s = scipy.signal.lfilter(b, a, x, *args, **kwargs)
+    return s
 
 ################################
 # Module initialization
