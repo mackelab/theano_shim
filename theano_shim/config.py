@@ -1,6 +1,7 @@
 """
 Global configuration variables
 """
+from collections import OrderedDict
 
 use_theano = False
 inf = None

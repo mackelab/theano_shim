@@ -203,7 +203,8 @@ def print(x, message="", printfn='print'):
             return theano.printing.Print(msg)(x)
         elif printfn == 'debugprint':
             print(msg)
-            return theano.printing.debugprint(x)
+            theano.printing.debugprint(x)
+            return x
         elif printfn == 'eval':
             try:
                 val = x.eval()
@@ -211,7 +212,7 @@ def print(x, message="", printfn='print'):
                 return theano.printing.Print(msg)(x)
             else:
                 print(msg + " Value of {}: {}".format(str(x), val))
-                return val
+                return x
     else:
         if len(message) > 0 and message[-1] != " ":
             msg = message + " "
