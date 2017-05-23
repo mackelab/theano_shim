@@ -357,6 +357,12 @@ def isshared(*var):
         return any(isinstance(v, ShimmedShared)
                    for v in _expand_args(var))
 
+def is_numeric(var):
+    if cf.use_theano:
+        return isinstance(var, (np.ndarray, T.TensorVariable))
+    else:
+        return isinstance(var, np.ndarray)
+
 #######################
 # Casting functions
 def cast(x, dtype):
