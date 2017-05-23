@@ -115,6 +115,32 @@ def getT():
     else:
         return T
 
+class LazyEval:
+    """
+    Small wrapper to permit lazy evaluation of arguments.
+    Python by default evaluates every argument being passed to a function,
+    which can lead to problems e.g. when using ifelse as a guard:
+        a = ifelse( neq(x, 0), y/x, y )
+    In this case we can rewrite the above as
+        a = ifelse( neq(x, 0), LazyEval(lambda x,y: y/x, (x,y)), y )
+
+    Current functions compatible with LazyEval:
+        - ifelse
+    """
+    def __init__(self, f, args=()):
+        """
+        Parameters
+        ----------
+        f: callable
+            An expression which returns the desired value
+        args: tuple
+            The variables appearing in the function f.
+        """
+        self.f = f
+        self.args = args
+    def eval(self):
+        return self.f(*self.args)
+
 ##########################
 # Querying the computational graph
 
@@ -633,6 +659,10 @@ def ifelse(condition, then_branch, else_branch, name=None, outshape=None):
                         or isinstance(then_branch, theano.gof.Variable)
                         or isinstance(else_branch, theano.gof.Variable))):
         # Theano function
+        if isinstance(then_branch, LazyEval):
+            then_branch = then_branch.eval()
+        if isinstance(else_branch, LazyEval):
+            else_branch = else_branch.eval()
         if outshape is None:
             return theano.ifelse.ifelse(condition, then_branch,
                                         else_branch, name)
@@ -642,8 +672,12 @@ def ifelse(condition, then_branch, else_branch, name=None, outshape=None):
     else:
         # Python function
         if condition:
+            if isinstance(then_branch, LazyEval):
+                then_branch = then_branch.eval()
             return then_branch
         else:
+            if isinstance(else_branch, LazyEval):
+                else_branch = else_branch.eval()
             return else_branch
 
 def switch(cond, ift, iff):
@@ -1004,6 +1038,11 @@ def log(x):
         return T.log(x)
     else:
         return np.log(x)
+def log10(x):
+    if is_theano_object(x):
+        return T.log10(x)
+    else:
+        return np.log10(x)
 def min(x):
     if is_theano_object(x):
         return T.min(x)
