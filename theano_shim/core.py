@@ -86,10 +86,16 @@ def load(load_theano = False, reraise=False):
         cf.inf = 1e12
         cf.RandomStreams = theano.tensor.shared_randomstreams.RandomStreams
 
+        if cf.sys.version_info.minor >= 5:
+            cf.Numeric = cf.Union[np.ndarray, T.TensorVariable]
+
     else:
         cf.lib = np
         cf.inf = np.inf
         cf.RandomStreams = ShimmedRandomStreams
+
+        if cf.sys.version_info.minor >= 5:
+            cf.Numeric = cf.Union[np.ndarray]
 
 def gettheano():
     if not cf.use_theano:
@@ -356,12 +362,6 @@ def isshared(*var):
     else:
         return any(isinstance(v, ShimmedShared)
                    for v in _expand_args(var))
-
-def is_numeric(var):
-    if cf.use_theano:
-        return isinstance(var, (np.ndarray, T.TensorVariable))
-    else:
-        return isinstance(var, np.ndarray)
 
 #######################
 # Casting functions
