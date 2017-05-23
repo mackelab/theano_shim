@@ -4,6 +4,7 @@ import scipy as sp
 import scipy.sparse
 
 from . import core
+from . import config as cf
 from .core import is_theano_object
 
 ######################
@@ -14,22 +15,22 @@ from .core import is_theano_object
 
 def csr_matrix(name, shape, dtype=None):
     if dtype is None:
-        if core.use_theano:
+        if cf.use_theano:
             dtype = theano.config.floatX
         else:
             dtype = 'float32'
-    if core.use_theano:
+    if cf.use_theano:
         return theano.sparse.csr_matrix(name=name, dtype=dtype)
     else:
         return sp.sparse.csr_matrix(shape, dtype=dtype)
 
 def csc_matrix(name, shape, dtype=None):
     if dtype is None:
-        if core.use_theano:
+        if cf.use_theano:
             dtype = theano.config.floatX
         else:
             dtype = 'float32'
-    if core.use_theano:
+    if cf.use_theano:
         return theano.sparse.csc_matrix(name=name, dtype=dtype)
     else:
         return sp.sparse.csc_matrix(shape, dtype=dtype)
@@ -47,7 +48,7 @@ def csc_from_dense(x):
 
 def coo_matrix(name, shape, dtype=None):
     if dtype is None:
-        if core.use_theano:
+        if cf.use_theano:
             dtype = theano.config.floatX
         else:
             dtype = 'float32'
@@ -61,7 +62,7 @@ def coo_matrix(name, shape, dtype=None):
             return sp.sparse.coo_matrix((data, (row, col)), shape)
 
     else:
-        if core.use_theano:
+        if cf.use_theano:
             raise NotImplementedError("Theano doesn't support coo_matrix natively, and a wrapper has not yet been implemented in shim.")
         else:
             return sp.sparse.coo_matrix(shape, dtype=dtype)
