@@ -42,19 +42,6 @@ from . import config as cf
 
 logger = logging.getLogger('theano_shim')
 logger.setLevel(logging.INFO)
-# _fh = logging.FileHandler("theano_shim.log", mode='a')
-# _fh.setLevel(logging.DEBUG)
-# _ch = logging.StreamHandler()
-# _ch.setLevel(logging.WARNING)
-# _logging_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-# _fh.setFormatter(_logging_formatter)
-# _ch.setFormatter(_logging_formatter)
-# logger.addHandler(_fh)
-# logger.addHandler(_ch)
-
-# Initialization function.
-# Import the appropriate numerical library into this namespace,
-# so we can make calls like `lib.exp`
 
 ######################
 def load_theano():
@@ -171,11 +158,6 @@ def is_computable(varlist, with_inputs=None):
 
 def add_update(variable, value):
     logger.info("Adding Theano update : {} -> {}".format(variable.name, str(value)))
-    # if variable in self.theano.updates:
-    #     raise ValueError("Cannot update the same shared variable twice. "
-    #                      "It should be used in a `theano.function` call, and then "
-    #                      "cleared with `shim.theano_reset()` before being "
-    #                      "updated again.")
     if not isshared(variable):
         raise ValueError("The updates mechanism only applies to shared variables.")
 
@@ -927,23 +909,25 @@ def factorial(n, exact=False):
 
 # TODO: Use fftconvolve if ~500 time bins or more
 
-def conv1d(history_arr, discrete_kernel_arr, tarr_len, discrete_kernel_shape, mode='valid'):
+def conv1d(data_arr, kernel_arr, tarr_len, discrete_kernel_shape, mode='valid'):
     """
-    Applies the convolution to each component of the history
-    and stacks the result into an array
+    Convolve each component of data_arr with kernel_arr and stack the result
+    into an array. data_arr is an NxM array, where N is the number of time bins
+    and M the number of components kernel_arr is an MxM array, for which the
+    element with index (i,j) represents the contribution of component j to
+    component i. (Consistent with a dot product where the kernel is on the left.)
+    In other words, each row j of kernel_arr is convolved with the row j of data_arr.
 
     Parameters
     ----------
-    history_arr : ndarray | theano.tensor
-        Return value from indexing history[begin1:end1],
-        where history is a Series instance with shape (M,)
-    discrete_kernel_arr : ndarray | theano.tensor
-        Return value from indexing discrete_kernel[begin2:end2],
-        where discret_kernel is a Series instance with shape (M, M)
-        obtained by calling history.discretize_kernel.
+    data_arr : 2D ndarray or theano.tensor
+        NxM array
+    kernel_arr : 2D ndarray | theano.tensor
+        MxM array
     tarr_shape : tuple
-        The length of the history's time array. When computing using NumPy,
-        validated agains history_arr.shape[0]
+        The length of the history's time array. Theano can't determine the
+        shape from a tensor, so it is specified separately. When computing
+        using NumPy, validated agains data_arr.shape[0]
     discrete_kernel_shape : tuple
         Shape of the discrete kernel array. Theano can't determine the shape
         from a tensor, so it is specified separately. When computing using
@@ -953,16 +937,17 @@ def conv1d(history_arr, discrete_kernel_arr, tarr_len, discrete_kernel_shape, mo
     -------
     ndarray:
         Result has shape (M, M)
+
     """
 
-    assert(history_arr.ndim == 2)
+    assert(data_arr.ndim == 2)
     output_shape = discrete_kernel_shape[1:]
-    if (discrete_kernel_arr.ndim == 2):
+    if (kernel_arr.ndim == 2):
         # Algorithm assumes a "to" axis on the kernel. Add it.
-        discrete_kernel_arr = add_axes(discrete_kernel_arr, 1, 'before last')
+        kernel_arr = add_axes(kernel_arr, 1, 'before last')
         discrete_kernel_shape = discrete_kernel_shape[0:1] + (1,) + discrete_kernel_shape[1:2]
     else:
-        check(discrete_kernel_arr.ndim == 3)
+        check(kernel_arr.ndim == 3)
 
     # Convolutions leave the time component on the inside, but we want it on the outside
     # So we do the iterations in reverse order, and flip the result with transpose()
@@ -972,23 +957,23 @@ def conv1d(history_arr, discrete_kernel_arr, tarr_len, discrete_kernel_shape, mo
         # We then index [:,0] to remove the spurious dimension
         result = T.stack(
                   [ T.stack(
-                       [ T.signal.conv.conv2d(history_arr[:, from_idx:from_idx+1 ],
-                                              discrete_kernel_arr[:, to_idx, from_idx:from_idx+1 ],
+                       [ T.signal.conv.conv2d(data_arr[:, from_idx:from_idx+1 ],
+                                              kernel_arr[:, to_idx, from_idx:from_idx+1 ],
                                               image_shape = (tarr_len, 1),
                                               filter_shape = (discrete_kernel_shape[0], 1),
                                               border_mode = mode)[:,0]
                          for to_idx in np.arange(discrete_kernel_shape[1]) ] )
                        for from_idx in np.arange(discrete_kernel_shape[2]) ] ).T
     else:
-        assert(discrete_kernel_shape == discrete_kernel_arr.shape)
-        assert(tarr_len == history_arr.shape[0])
+        assert(discrete_kernel_shape == kernel_arr.shape)
+        assert(tarr_len == data_arr.shape[0])
         result = np.stack(
                   [ np.stack(
-                       [ scipy.signal.convolve(history_arr[:, from_idx ],
-                                               discrete_kernel_arr[:, to_idx, from_idx ],
+                       [ scipy.signal.convolve(data_arr[:, from_idx ],
+                                               kernel_arr[:, to_idx, from_idx ],
                                                mode=mode)
-                         for to_idx in np.arange(discrete_kernel_arr.shape[1]) ] )
-                       for from_idx in np.arange(discrete_kernel_arr.shape[2]) ] ).T
+                         for to_idx in np.arange(kernel_arr.shape[1]) ] )
+                       for from_idx in np.arange(kernel_arr.shape[2]) ] ).T
 
     return result.reshape((tarr_len - discrete_kernel_shape[0] + 1,) + output_shape)
 
@@ -1023,11 +1008,11 @@ def clip(a, a_min, a_max):
         return T.clip(a, a_min, a_max)
     else:
         return np.clip(a, a_min, a_max)
-def dot(a, b):
-    if is_theano_object(a) or is_theano_object(b):
-        return T.dot(a, b)
+def dot(x, y):
+    if is_theano_object(x) or is_theano_object(y):
+        return T.dot(x, y)
     else:
-        return np.dot(a, b)
+        return np.dot(x, y)
 def exp(x):
     if is_theano_object(x):
         return T.exp(x)
@@ -1096,26 +1081,3 @@ def zero(shape, dtype):
         return T.zeros(shape, dtype)
     else:
         return np.zeros(shape, dtype)
-
-# The following is code that could be used for automatic
-# redirects on a class
-# #######################
-# # Default behaviour is to redirect to NumPy or Theano
-# # if a particular attribute is not already defined
-
-# class _LibAttribute:
-#     def __init__(self, name):
-#         try:
-#             self.npattr = getattr(np, name)
-#             self.libattr = getattr(shim.lib, name)
-#         except AttributeError:
-#             raise AttributeError("theano_shim does not define '{}'.".format(name))
-
-#     def __call__(self, *args):
-#         try:
-#             return self.npattr(*args)
-#         except TypeError:
-#             return self.libattr(*args)
-
-# def __getattr__(self, name):
-#     return _LibAttribute(name)
