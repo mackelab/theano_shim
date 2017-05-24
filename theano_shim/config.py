@@ -9,6 +9,7 @@ if sys.version_info.major < 3:
 from collections import OrderedDict
 if sys.version_info.minor >= 5:
     from typing import Union
+import numpy as np
 
 use_theano = False
 inf = None
