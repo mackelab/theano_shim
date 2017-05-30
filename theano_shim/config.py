@@ -25,3 +25,9 @@ lib = None
     # DEPRECATION WARNING: lib will soon be removed
 RandomStreams = None
 
+# TerminatingTypes is a tuple of all types which may be iterable but
+# are treated as a single unit. This is used when recursively expanding
+# an argument in core._expand_args.
+# For example, if the sparse module is loaded, sparse types are added to TerminatingTypes,
+# since we will never store a Theano object as an element of a SciPy sparse matrix
+_TerminatingTypes = (str,)

@@ -323,12 +323,13 @@ def _expand_args(arglst):
     """
     if not isinstance(arglst, collections.abc.Iterable):
         arglst = [arglst]
+    elif isinstance(arglst, cf._TerminatingTypes):
+        arglst = [arglst]
     for arg in arglst:
         if cf.use_theano and isinstance(arg, theano.gof.Variable):
             # Theano variables aren't iterable
             yield arg
-        elif isinstance(arg, str):
-            # Don't iterate over strings
+        elif isinstance(arg, cf._TerminatingTypes):
             yield arg
         elif isinstance(arg, slice):
             yield arg.start
@@ -1071,7 +1072,7 @@ def max(x):
     else:
         return np.max(x)
 def ones(shape, dtype):
-    if is_theano_object(x):
+    if is_theano_object(shape):
         return T.ones(shape, dtype)
     else:
         return np.ones(shape, dtype)
