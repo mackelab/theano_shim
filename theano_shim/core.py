@@ -1028,9 +1028,9 @@ def all(x):
         return np.all(x)
 def concatenate(tensor_list, axis=0):
     if any(is_theano_object(x) for x in tensor_list):
-        return T.concatenate(tensor_list, axis=0)
+        return T.concatenate(tensor_list, axis)
     else:
-        return np.concatenate(tensor_list, axis=0)
+        return np.concatenate(tensor_list, axis)
 def cos(x):
     if is_theano_object(x):
         return T.cos(x)
