@@ -31,3 +31,7 @@ RandomStreams = None
 # For example, if the sparse module is loaded, sparse types are added to TerminatingTypes,
 # since we will never store a Theano object as an element of a SciPy sparse matrix
 _TerminatingTypes = (str,)
+
+def add_terminating_types(type_list):
+    global _TerminatingTypes
+    _TerminatingTypes = tuple( set(type_list).union( _TerminatingTypes ) )

@@ -8,7 +8,7 @@ from . import config as cf
 from .core import is_theano_object
 
 # Add to TerminatingTypes
-cf._TerminatingTypes = tuple( set([sp.sparse.spmatrix]).union( cf._TerminatingTypes ) )
+cf.add_terminating_types([sp.sparse.spmatrix])
 
 ######################
 # Sparse matrices

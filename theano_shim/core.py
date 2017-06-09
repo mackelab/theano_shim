@@ -43,6 +43,7 @@ from . import config as cf
 logger = logging.getLogger('theano_shim')
 logger.setLevel(logging.INFO)
 
+
 ######################
 def load_theano():
     load(True)
@@ -367,6 +368,20 @@ def isshared(*var):
 #######################
 # Casting functions
 def cast(x, dtype):
+    """
+    Parameters
+    ----------
+    x: scalar, array or Theano variable
+        The variable to cast
+    dtype: str
+        The type to which cast the variable. One of
+        - 'int8'
+        - 'int16'
+        - 'int32'
+        - 'int64'
+        - 'float32'
+        - 'float64'
+    """
     if is_theano_object(x):
         return T.cast(x, dtype)
     else:
@@ -727,6 +742,8 @@ class ShimmedShared(np.ndarray):
                 # np.isscalar will fail on 0-dim arrays; isscalar works
             self = super(ShimmedShared, self).__setitem__(None, new_value)
 
+cf.add_terminating_types([ShimmedShared])
+
 def shared(value, name=None, strict=False, allow_downcast=None, **kwargs):
     value = np.asarray(value)
     if 'dtype' in kwargs:
@@ -904,7 +921,7 @@ def pad(array, array_shape, pad_width, mode='constant', **kwargs):
 def factorial(n, exact=False):
     """Note: the Theano version uses `gamma` regardless of `exact`"""
     assert(istype(n, 'int'))
-    check((n >= 0).all())
+    check(np.all(n >= 0))
     if is_theano_object(n):
         return T.gamma(n+1)
     else:
@@ -1041,6 +1058,11 @@ def clip(a, a_min, a_max):
         return T.clip(a, a_min, a_max)
     else:
         return np.clip(a, a_min, a_max)
+def cumsum(x, axis=None, dtype=None):
+    if is_theano_object(x):
+        return T.cumsum(x, axis)
+    else:
+        return np.cumsum(x, axis, dtype)
 def dot(x, y):
     if is_theano_object(x) or is_theano_object(y):
         return T.dot(x, y)
@@ -1050,6 +1072,8 @@ def exp(x):
     if is_theano_object(x):
         return T.exp(x)
     else:
+        # if isinstance(x, ShimmedShared):
+        #     x = x.get_value()
         return np.exp(x)
 def log(x):
     if is_theano_object(x):
