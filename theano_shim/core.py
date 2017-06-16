@@ -479,7 +479,8 @@ def isscalar(x):
     return asarray(x).ndim == 0 and arrayed_x.dtype != 'object'
 
 def isarray(x):
-    return hasattr(x, 'ndim')
+    # Some scalar numpy types (e.g. np.int64) have the 'ndim' attribute
+    return (not np.isscalar(x)) and hasattr(x, 'ndim')
 
 def asscalar(x):
     if isscalar(x):
