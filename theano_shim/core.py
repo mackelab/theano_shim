@@ -1134,7 +1134,7 @@ def tile(x, reps, ndim=None):
         return T.tile(x, reps, ndim)
     else:
         return np.tile(x, reps)
-def zero(shape, dtype):
+def zeros(shape, dtype):
     if is_theano_object(shape):
         return T.zeros(shape, dtype)
     else:
