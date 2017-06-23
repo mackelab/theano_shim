@@ -502,6 +502,26 @@ def flatten(x, outdim=1):
         outshape = x.shape[:outdim-1] + (np.prod(x.shape[outdim-1:]), )
         return x.reshape(outshape)
 
+def addbroadcast(x, *axes):
+    """
+    Equivalent to theano.tensor.addbroadcast.
+    For NumPy objects, checks that broadcasted dimensions have length 1,
+    but otherwise does nothing.
+    Compared to the Theano version, negative values for axes are supported:
+    -1 refers to the last axis, -2 to the second last, etc.
+    """
+    if is_theano_object(x):
+        # T.addbroadcast only works with positive axes
+        axes = [ ax if ax >= 0 else x.ndim + ax for ax in axes ]
+        return T.addbroadcast(x, *axes)
+    else:
+        for ax in axes:
+            if x.shape[ax] != 1:
+                raise ValueError("Tried to make axis {} of a variable with shape {} broadcastable. "
+                                 "Only dimensions with length 1 can be broadcasted."
+                                 .format(ax, x.shape))
+        return x
+
 #####################
 # Convenience function for max / min
 
@@ -600,7 +620,7 @@ def bool(a):
     integers rather than booleans.)
     """
     # Booleans need to be converted to integers for Theano
-    if cf.use_theano and isinstance(a, builtins.bool):
+    if cf.use_theano and isinstance(a, (builtins.bool, np.bool_)):
         return np.int8(a)
     elif cf.use_theano:
         return a
@@ -669,10 +689,12 @@ def ifelse(condition, then_branch, else_branch, name=None, outshape=None):
         if isinstance(else_branch, LazyEval):
             else_branch = else_branch.eval()
         if outshape is None:
-            return theano.ifelse.ifelse(condition, then_branch,
+            # We call `bool` on the condition, in case it's a Python boolean
+            # (even shim.ge & friends can return bools)
+            return theano.ifelse.ifelse(bool(condition), then_branch,
                                         else_branch, name)
         else:
-            return theano.ifelse.ifelse(condition, then_branch.reshape(outshape),
+            return theano.ifelse.ifelse(bool(condition), then_branch.reshape(outshape),
                                         else_branch.reshape(outshape), name)
     else:
         # Python function
