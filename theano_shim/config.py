@@ -14,6 +14,8 @@ import numpy as np
 use_theano = False
 inf = None
 
+# TODO: floatX
+
 # Unified support for type hints; supported in Python >=3.5
 if sys.version_info.minor >= 5:
     Numeric = Union[np.ndarray]

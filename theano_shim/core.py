@@ -381,7 +381,12 @@ def cast(x, dtype):
         - 'int64'
         - 'float32'
         - 'float64'
+        Can optionally be an equivalent numpy dtype, as returned by
+        <numpy var>.dtype.
     """
+    if isinstance(dtype, np.dtype):
+        dtype = str(dtype)
+
     if is_theano_object(x):
         return T.cast(x, dtype)
     else:
