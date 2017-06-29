@@ -33,7 +33,7 @@ Pointers for writing theano switches
 
 import logging
 import builtins
-import collections.abc
+import collections
 import numpy as np
 import scipy as sp
 import scipy.signal
@@ -146,7 +146,7 @@ def is_computable(varlist, with_inputs=None):
     along with the symbolic variables in `with_inputs`.
     If varlist is not a Theano graph, it is always computable.
     """
-    if ( not isinstance(varlist, collections.abc.Iterable)
+    if ( not isinstance(varlist, collections.Iterable)
          or isinstance(varlist, str) ):
         raise ValueError("theano_shim.is_computable requires a list as first argument.")
     if with_inputs is None:
@@ -190,7 +190,7 @@ def get_updates():
 
 def reset_updates():
     logger.info("Clearing Theano updates")
-    cf.theano_updates = {}
+    cf.theano_updates = collections.OrderedDict()
 
 #######################
 # Print statement
@@ -322,7 +322,7 @@ def _expand_args(arglst):
     Recursively expand slices, iterables, dictionaries into a list of scalar data type.
     Scalars are returned as a 1 element list.
     """
-    if not isinstance(arglst, collections.abc.Iterable):
+    if not isinstance(arglst, collections.Iterable):
         arglst = [arglst]
     elif isinstance(arglst, cf._TerminatingTypes):
         arglst = [arglst]
@@ -346,7 +346,7 @@ def _expand_args(arglst):
                 yield arg  # can't iterate over a 0-dim array
             else:
                 yield from _expand_args(arg)
-        elif isinstance(arg, collections.abc.Iterable):
+        elif isinstance(arg, collections.Iterable):
             yield from _expand_args(arg)
         else:
             yield arg
@@ -1147,7 +1147,7 @@ def sum(x, axis=None, dtype=None, acc_dtype=None, keepdims=np._NoValue):
     if is_theano_object(x):
         result = T.sum(x, axis, dtype, acc_dtype)
         if keepdims and keepdims is not np._NoValue:
-            if not isinstance(axis, collections.abc.Iterable):
+            if not isinstance(axis, collections.Iterable):
                 axes = [axis]
             else:
                 axes = sorted(axis)
