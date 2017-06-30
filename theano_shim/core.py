@@ -1123,7 +1123,7 @@ def max(x):
         return T.max(x)
     else:
         return np.max(x)
-def ones(shape, dtype):
+def ones(shape, dtype=None):
     if is_theano_object(shape):
         return T.ones(shape, dtype)
     else:
@@ -1161,8 +1161,14 @@ def tile(x, reps, ndim=None):
         return T.tile(x, reps, ndim)
     else:
         return np.tile(x, reps)
-def zeros(shape, dtype):
+def zeros(shape, dtype=None):
     if is_theano_object(shape):
         return T.zeros(shape, dtype)
     else:
         return np.zeros(shape, dtype)
+
+def zeros_like(x, dtype=None):
+    if is_theano_object(x):
+        return T.zeros_like(x, dtype)
+    else:
+        return np.zeros_like(x, dtype)
