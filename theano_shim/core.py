@@ -769,6 +769,8 @@ class ShimmedShared(np.ndarray):
             assert(isscalar(new_value))
                 # np.isscalar will fail on 0-dim arrays; isscalar works
             self = super(ShimmedShared, self).__setitem__(None, new_value)
+    def eval(self, inputs_to_values=None):
+        return self.get_value()
 
 cf.add_terminating_types([ShimmedShared])
 
