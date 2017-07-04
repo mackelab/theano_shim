@@ -37,6 +37,7 @@ import collections
 import numpy as np
 import scipy as sp
 import scipy.signal
+import scipy.special
 
 from . import config as cf
 
@@ -1105,6 +1106,11 @@ def exp(x):
         # if isinstance(x, ShimmedShared):
         #     x = x.get_value()
         return np.exp(x)
+def gammaln(x):
+    if is_theano_object(x):
+        return T.gammaln(x)
+    else:
+        return sp.special.gammaln(x)
 def log(x):
     if is_theano_object(x):
         return T.log(x)
