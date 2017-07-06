@@ -1,4 +1,7 @@
 * TODO Split random number functionality to its own module
+* TODO Scan wrapper
+* TODO theano.function wrapper
+* TODO ShimmedSymbolic ? Could be used as input in shim.function
 * DONE Make shim.sparse optional load.
   CLOSED: [2017-05-24 Wed 15:20]
   Only Load scipy.sparse and theano.sparse if it is loaded.
