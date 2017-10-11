@@ -358,6 +358,10 @@ def is_theano_variable(*var):
 def is_theano_object(*obj):
     return cf.use_theano and any(isinstance(o, theano.gof.Variable)
                                  for o in _expand_args(obj))
+def is_constant(*obj):
+    # Both symbolic and shared objects return False
+    return not cf.use_theano or builtins.all(isinstance(c, theano.tensor.TensorConstant)
+                                    for c in _expand_args(obj))
 def isshared(*var):
     if cf.use_theano:
         return any(isinstance(v, (T.sharedvar.SharedVariable, ShimmedShared))
@@ -686,9 +690,16 @@ def ifelse(condition, then_branch, else_branch, name=None, outshape=None):
     is to only apply the reshape when using Theano, which is what specifying
     `outshape` as an argument does.
     """
-    if (cf.use_theano and (isinstance(condition, theano.gof.Variable)
-                        or isinstance(then_branch, theano.gof.Variable)
-                        or isinstance(else_branch, theano.gof.Variable))):
+    # First check if we can replace an Theano conditional by a Python one
+    if is_theano_object(condition) and is_constant(condition):
+        condition = bool(condition.data)
+
+    # Now the actual function
+    if (cf.use_theano
+        and not isinstance(condition, builtins.bool)
+        and (isinstance(condition, theano.gof.Variable)
+             or isinstance(then_branch, theano.gof.Variable)
+             or isinstance(else_branch, theano.gof.Variable))):
         # Theano function
         if isinstance(then_branch, LazyEval):
             then_branch = then_branch.eval()
@@ -745,6 +756,14 @@ class ShimmedShared(np.ndarray):
     def __eq__(self, other):
         return id(self) == id(other)
 
+    def _as_TensorVariable(self):
+        # Allow mixing of ShimmedShared and Theano variables
+        # Theano looks for this function first when multiplying with non-Theano types
+        if cf.use_theano:
+            return T.constant(self.get_value())
+        else:
+            return self.get_value()
+
     # Usual theano.shared interface
     def get_value(self, borrow=False, return_internal_type=False):
         return self.view(np.ndarray)
@@ -775,12 +794,13 @@ class ShimmedShared(np.ndarray):
 
 cf.add_terminating_types([ShimmedShared])
 
-def shared(value, name=None, strict=False, allow_downcast=None, **kwargs):
+def shared(value, name=None, strict=False, allow_downcast=None, symbolic=True,
+           **kwargs):
     value = np.asarray(value)
     if 'dtype' in kwargs:
         logger.warning("You passed the keyword 'dtype' to the shared constructor. "
                        "Theano doesn't support this keyword for shared variables.")
-    if cf.use_theano:
+    if symbolic and cf.use_theano:
         # Unless a broadcast pattern is specified, we create one to match
         # the NumPy behaviour (broadcastable on all axes of dimension 1).
         broadcast_pattern = kwargs.pop('broadcastable', None)
