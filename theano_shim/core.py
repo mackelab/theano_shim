@@ -154,8 +154,8 @@ def is_computable(varlist, with_inputs=None):
         with_inputs = []
     computable = True
     for var in varlist:
-        if is_theano_variable(var):
-            if not bool( set(theano.gof.graph.inputs(varlist)).difference(with_inputs) ):
+        if is_theano_variable(var): # Required because varlist may contain non-Theano objects
+            if is_theano_variable( set(theano.gof.graph.inputs([var])).difference(with_inputs) ):
                 computable = False
                 break
     return computable
