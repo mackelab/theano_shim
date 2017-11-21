@@ -49,7 +49,7 @@ logger.setLevel(logging.INFO)
 def load_theano():
     load(True)
 
-def load(load_theano = False, reraise=False):
+def load(load_theano=True, reraise=False):
     """Reset the module to use or not use Theano.
     This should be called once at the top of your code.
 
