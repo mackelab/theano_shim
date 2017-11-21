@@ -23,9 +23,9 @@ By default this will not even try to load Theano, so you can use it on
 a machine where Theano is not installed.
 To 'switch on' Theano, add the following below the import:
 
-    shim.use_theano()
+    shim.load_theano()
     
-You can switch it back to its default state with `shim.load(False)`.
+You can switch it back to using pure Numpy `shim.load(False)`. Theano can also be loaded with `shim.load()`
 
 ### Writing your own conditionals
 In some cases, you may find that the functions provided here are
@@ -37,7 +37,7 @@ to aid this task:
 - `is_theano_object` checks whether a variable is any Theano object 
    (including shared variables)
 - `isshared` checks whether a variable is a shared object (either a Theano
-   shared variable, or an instance `ShimmedShared` which this model provides).
+   shared variable, or an instance `ShimmedShared` which this module provides).
    
 You can also test on `theano_shim.config.use_theano` to check whether Theano
 is loaded.
@@ -51,27 +51,7 @@ to extend it for your needs (don't forget to share your
 contributions back upstream ! =) ). For this reason, a
 'Development Installation' is the preferred means of
 installing this module, so it doesn't need to be reinstalled
-after every modification.
+after every modification. This can done by changing to the
+directory containing this file and executing
 
-
-## Development installation
-
-- Create the virtual environment if required
-
-      python3 -m venv --system-site-packages ~/usr/venv/mackelab
-
-  You can omit --system-site-packages if you install all dependencies (like
-  SciPy) within the virtual environment.
-
-
-- Activate the virtual environment
-
-      source ~/usr/venv/mackelab/bin/activate
-
-
-- cd to the directory containing this file
-
-
-- Install the code in "Development mode"
-
-      pip install -e .
+    pip install -e .
