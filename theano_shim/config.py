@@ -37,3 +37,4 @@ _TerminatingTypes = (str,np.ndarray)
 def add_terminating_types(type_list):
     global _TerminatingTypes
     _TerminatingTypes = tuple( set(type_list).union( _TerminatingTypes ) )
+

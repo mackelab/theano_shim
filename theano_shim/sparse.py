@@ -11,6 +11,14 @@ from .core import is_theano_object
 cf.add_terminating_types([sp.sparse.spmatrix])
 
 ######################
+# Utilities
+
+def issparse(var):
+    return (sp.sparse.issparse(var)
+            or (cf.use_theano and
+                isinstance(theano.sparse.basic.SparseVariable)))
+
+######################
 # Sparse matrices
 # Theano just wraps the Scipy sparse matrices, so there's not much to do here
 # However, Theano only supports csr and csc matrices. For others we would need
