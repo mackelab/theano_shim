@@ -34,6 +34,7 @@ Pointers for writing theano switches
 import logging
 import builtins
 import collections
+import sys
 import numpy as np
 import scipy as sp
 import scipy.signal
@@ -109,6 +110,22 @@ def getT():
         raise RuntimeError("Tried to access theano.tensor, but Theano has not been loaded.")
     else:
         return T
+
+# These forms will retrieve theano or theano.tensor, whether or not cf.use_theano == True,
+# as long as any module in the stack has loaded them
+# These functions should only be used within this module, for cases where we need to treat
+# Theano arguments even if use_theano == False. Type-checking is an example of such a use case.
+def _gettheano():
+    if 'theano' in sys.modules:
+        return sys.modules['theano']
+    else:
+        raise RuntimeError("Tried to access theano, but it has not been loaded.")
+def _getT():
+    if 'theano' in sys.modules:
+        return sys.modules['theano'].tensor
+    else:
+        raise RuntimeError("Tried to access theano.tensor, but Theano has not been loaded.")
+
 
 class LazyEval:
     """
@@ -269,9 +286,9 @@ def get_test_value(var, nofail=False):
     If `nofail` is False (default), will raise an error if no test value is found.
     Otherwise returns None
     """
-    if cf.use_theano and isinstance(var, T.sharedvar.SharedVariable):
+    if 'theano' in sys.modules and isinstance(var, _getT().sharedvar.SharedVariable):
         retval = var.get_value()
-    elif cf.use_theano and isinstance(var, theano.gof.Variable):
+    elif 'theano' in sys.modules and isinstance(var, _gettheano().gof.Variable):
         try:
             retval = var.tag.test_value
         except AttributeError:
@@ -328,7 +345,7 @@ def _expand_args(arglst):
     elif isinstance(arglst, cf._TerminatingTypes):
         arglst = [arglst]
     for arg in arglst:
-        if cf.use_theano and isinstance(arg, theano.gof.Variable):
+        if 'theano' in sys.modules and isinstance(arg, _gettheano().gof.Variable):
             # Theano variables aren't iterable
             yield arg
         elif isinstance(arg, cf._TerminatingTypes):
@@ -341,7 +358,8 @@ def _expand_args(arglst):
             for key in arg.keys():
                 yield key
             for val in arg.values():
-                yield from nwlst.extend(_expand_args(val))
+                #yield from nwlst.extend(_expand_args(val))
+                yield from _expand_args(val)
         elif isinstance(arg, np.ndarray):
             if arg.ndim == 0:
                 yield arg  # can't iterate over a 0-dim array
@@ -363,8 +381,8 @@ def is_constant(*obj):
     return not cf.use_theano or builtins.all(isinstance(c, theano.tensor.TensorConstant)
                                     for c in _expand_args(obj))
 def isshared(*var):
-    if cf.use_theano:
-        return any(isinstance(v, (T.sharedvar.SharedVariable, ShimmedShared))
+    if 'theano' in sys.modules:
+        return any(isinstance(v, (_getT().sharedvar.SharedVariable, ShimmedShared))
                    for v in _expand_args(var))
     else:
         return any(isinstance(v, ShimmedShared)
@@ -443,7 +461,7 @@ def round(x):
     return res
 
 def asvariable(x, dtype=None):
-    if cf.use_theano:
+    if cf.use_theano in sys.modules:
         # No `isinstance` here: the point is to cast to a Theano variable
         if dtype is not None:
             return T.cast(T.as_tensor_variable(x), dtype)
@@ -460,7 +478,8 @@ def asarray(x, dtype=None, broadcastable=None):
     property.
     """
 
-    if cf.use_theano and isinstance(x, theano.gof.Variable):
+    if 'theano' in sys.modules and isinstance(x, _gettheano().gof.Variable):
+        T = _getT()
         if dtype is not None:
             retval = T.cast(T.as_tensor_variable(x), dtype)
         else:
@@ -480,18 +499,6 @@ def asarray(x, dtype=None, broadcastable=None):
                 retval = T.unbroadcast(retval, i)
     return retval
 
-def isscalar(x):
-    """
-    Return True if `x` is a scalar.
-    Note that in contrast to Numpy's isscalar, this returns True for 0-dim arrays.
-    """
-    arrayed_x = asarray(x)
-    return asarray(x).ndim == 0 and arrayed_x.dtype != 'object'
-
-def isarray(x):
-    # Some scalar numpy types (e.g. np.int64) have the 'ndim' attribute
-    return (not np.isscalar(x)) and hasattr(x, 'ndim')
-
 def asscalar(x):
     if isscalar(x):
         return x
@@ -504,9 +511,20 @@ def asscalar(x):
     else:
         return np.asscalar(x)
 
+def isscalar(x):
+    """
+    Return True if `x` is a scalar.
+    Note that in contrast to Numpy's isscalar, this returns True for 0-dim arrays.
+    """
+    arrayed_x = asarray(x)
+    return asarray(x).ndim == 0 and arrayed_x.dtype != 'object'
+
+def isarray(x):
+    # Some scalar numpy types (e.g. np.int64) have the 'ndim' attribute
+    return (not np.isscalar(x)) and hasattr(x, 'ndim')
 
 def flatten(x, outdim=1):
-    if cf.use_theano and isinstance(x, theano.gof.Variable):
+    if 'theano' in sys.modules and isinstance(x, theano.gof.Variable):
         return T.flatten(x, outdim)
     else:
         outshape = x.shape[:outdim-1] + (np.prod(x.shape[outdim-1:]), )
@@ -532,6 +550,20 @@ def addbroadcast(x, *axes):
                                  .format(ax, x.shape))
         return x
 
+def eval(x, *args, **kwargs):
+    """
+    If `x` is has an 'eval' method, return `x.eval(*args, **kwargs)`. Otherwise just
+    return `x`. In the latter case, `*args` and `**kwargs` are ignored, and a
+    warning is printed if they are not empty.
+    """
+    if hasattr(x, 'eval'):
+        return x.eval(*args, **kwargs)
+    else:
+        if len(args) + len(kwargs) > 0:
+            logger.warning("Ignoring arguments to `eval`: object does not have "
+                           "an `eval` method.")
+        return x
+
 #####################
 # Convenience function for max / min
 
@@ -540,8 +572,8 @@ def largest(*args):
     assert(len(args) >= 0)
     if len(args) == 1:
         return args[0]
-    if cf.use_theano and any(isinstance(arg, theano.gof.Variable) for arg in args):
-        return T.largest(*args)
+    if 'theano' in sys.modules and any(isinstance(arg, _gettheano().gof.Variable) for arg in args):
+        return _getT().largest(*args)
     else:
         retval = np.maximum(args[0], args[1])
         for arg in args[2:]:
@@ -553,8 +585,8 @@ def smallest(*args):
     assert(len(args) > 0)
     if len(args) == 0:
         return args[0]
-    if cf.use_theano and any(isinstance(arg, theano.gof.Variable) for arg in args):
-        return T.smallest(*args)
+    if 'theano' in sys.modules and any(isinstance(arg, _gettheano().gof.Variable) for arg in args):
+        return _getT().smallest(*args)
     else:
         retval = np.minimum(args[0], args[1])
         for arg in args[2:]:
@@ -562,7 +594,7 @@ def smallest(*args):
         return retval
 
 def abs(x):
-    if cf.use_theano and isinstance(x, theano.gof.Variable):
+    if 'theano' in sys.modules and isinstance(x, _gettheano().gof.Variable):
         if x.ndim == 2:
             return __builtins__['abs'](x)
         else:
@@ -632,7 +664,7 @@ def bool(a):
     # Booleans need to be converted to integers for Theano
     if cf.use_theano and isinstance(a, (builtins.bool, np.bool_)):
         return np.int8(a)
-    elif cf.use_theano:
+    elif cf.use_theano or is_theano_object(a):
         return a
     else:
         return builtins.bool(a)
@@ -643,9 +675,9 @@ def and_(a, b):
         return bool(bool(a) * bool(b))
 
     # matrix function
-    if (cf.use_theano and (isinstance(a, theano.gof.Variable)
-                        or isinstance(b, theano.gof.Variable))):
-        return T.and_(a, b)
+    if ('theano' in sys.modules and (isinstance(a, _gettheano().gof.Variable)
+                                or isinstance(b, _gettheano().gof.Variable))):
+        return _getT().and_(a, b)
     else:
         return np.logical_and(a, b)
 
@@ -655,9 +687,9 @@ def or_(a, b):
         return bool(bool(a) + bool(b))
 
     # matrix function
-    if (cf.use_theano and (isinstance(a, theano.gof.Variable)
-                        or isinstance(b, theano.gof.Variable))):
-        return T.or_(a, b)
+    if ('theano' in sys.modules and (isinstance(a, _gettheano().gof.Variable)
+                                or isinstance(b, _gettheano().gof.Variable))):
+        return _getT().or_(a, b)
     else:
         return np.logical_or(a, b)
 
@@ -741,7 +773,11 @@ class ShimmedShared(np.ndarray):
     # for indications on subclassing ndarray
 
     def __new__(cls, value, name=None, strict=False, allow_downcast=None, **kwargs):
-        obj = np.asarray(value).view(cls).copy()
+        if not isinstance(value, np.ndarray):
+            value = np.asarray(value)
+        if hasattr(value, 'shim_class'):
+            cls = value.shim_class
+        obj = value.view(cls).copy()
         obj.name = name
         return obj
 
@@ -750,7 +786,7 @@ class ShimmedShared(np.ndarray):
         self.name = getattr(obj, 'name', None)
 
     # We are emulating theano.shared, where different instances
-    # are considred distinct
+    # are considered distinct
     def __hash__(self):
         return id(self)
     def __eq__(self, other):
@@ -769,6 +805,7 @@ class ShimmedShared(np.ndarray):
         return self.view(np.ndarray)
             # On values obtained by get_value, equality testing shold
             # follow the usual rules for arrays, hence the view(np.ndarray)
+
     def set_value(self, new_value, borrow=False):
         """
         If `allow_resize` is false (default), will raise an error if
@@ -789,14 +826,21 @@ class ShimmedShared(np.ndarray):
             assert(isscalar(new_value))
                 # np.isscalar will fail on 0-dim arrays; isscalar works
             self = super(ShimmedShared, self).__setitem__(None, new_value)
+
     def eval(self, inputs_to_values=None):
         return self.get_value()
+
+    @property
+    def broadcastable(self):
+        """For Numpy arrays, an axis is broadcastable iff it has length one."""
+        return tuple(s==1 for s in self.shape)
 
 cf.add_terminating_types([ShimmedShared])
 
 def shared(value, name=None, strict=False, allow_downcast=None, symbolic=True,
            **kwargs):
-    value = np.asarray(value)
+    if not isinstance(value, np.ndarray):
+        value = np.asarray(value)
     if 'dtype' in kwargs:
         logger.warning("You passed the keyword 'dtype' to the shared constructor. "
                        "Theano doesn't support this keyword for shared variables.")
@@ -815,9 +859,9 @@ def shared(value, name=None, strict=False, allow_downcast=None, symbolic=True,
 ######################
 # Interchangeable set_subtensor
 def set_subtensor(x, y, inplace=False, tolerate_aliasing=False):
-    if cf.use_theano and (isinstance(x, theano.gof.Variable)
-                       or isinstance(y, theano.gof.Variable)):
-        return T.set_subtensor(x, y, inplace, tolerate_aliasing)
+    if 'theano' in sys.modules and (isinstance(x, _gettheano().gof.Variable)
+                                    or isinstance(y, _gettheano().gof.Variable)):
+        return _getT().set_subtensor(x, y, inplace, tolerate_aliasing)
     else:
         assert(x.base is not None)
             # Ensure that x is a view of another ndarray
@@ -826,8 +870,8 @@ def set_subtensor(x, y, inplace=False, tolerate_aliasing=False):
         return x.base
 
 def inc_subtensor(x, y, inplace=False, tolerate_aliasing=False):
-    if cf.use_theano and (isinstance(x, theano.gof.Variable)
-                       or isinstance(y, theano.gof.Variable)):
+    if 'theano' in sys.modules and (isinstance(x, _gettheano().gof.Variable)
+                                    or isinstance(y, _gettheano().gof.Variable)):
         return T.inc_subtensor(x, y, inplace, tolerate_aliasing)
     else:
         assert(x.base is not None)
@@ -874,7 +918,7 @@ def add_axes(x, num=1, pos='left'):
             + -1 : equivalent to 'before last'
             + `x.ndim` : equivalent to 'after'
     """
-    if cf.use_theano and isinstance(x, theano.gof.Variable):
+    if is_theano_variable(x):
         if pos in ['left', 'before', 'begin', 'first']:
             shuffle_pattern = ['x']*num
             shuffle_pattern.extend(range(x.ndim))
@@ -906,7 +950,7 @@ def add_axes(x, num=1, pos='left'):
                 raise ValueError("Unrecognized argument {} for pos.".format(pos))
 
 def moveaxis(a, source, destination):
-    if cf.use_theano and isinstance(x, theano.gof.Variable):
+    if is_theano_variable(x):
         axes_lst = list(range(x.ndim))
         axes_lst.pop(source)
         axes_lst = axes_lst[:destination] + [source] + axes_lst[destination:]
