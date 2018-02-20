@@ -34,6 +34,7 @@ Pointers for writing theano switches
 import logging
 import builtins
 import collections
+from numbers import Number
 import sys
 import numpy as np
 import scipy as sp
@@ -155,28 +156,11 @@ class LazyEval:
 
 ##########################
 # Querying the computational graph
+# (Moved to graph.py)
 
 def is_computable(varlist, with_inputs=None):
-    """
-    Returns True if the variables in varlist can be numerically evaluated
-    using only the inputs in `with_inputs`. In other words, the computational
-    graph associated to varlist is composed only of constants and shared variables,
-    along with the symbolic variables in `with_inputs`.
-    If varlist is not a Theano graph, it is always computable.
-    """
-    if ( not isinstance(varlist, collections.Iterable)
-         or isinstance(varlist, str) ):
-        raise ValueError("theano_shim.is_computable requires a list as first argument.")
-    if with_inputs is None:
-        with_inputs = []
-    computable = True
-    for var in varlist:
-        if is_theano_variable(var): # Required because varlist may contain non-Theano objects
-            if is_theano_variable( set(theano.gof.graph.inputs([var])).difference(with_inputs) ):
-                computable = False
-                break
-    return computable
-
+    logger.warning("Deprecation warning: theano_shim.is_computable() is deprecated. "
+                   "Use theano_shim.graph.is_computable().")
 
 ##########################
 # Managing theano updates
@@ -212,7 +196,22 @@ def reset_updates():
 
 #######################
 # Print statement
-def print(x, message="", printfn='print'):
+def _get_print_fn(file=sys.stdout):
+    """Return the same function as theano.printing._print_fn, with
+    the different that 'file' is passed as a keyword argument to print().
+    """
+    def _print_fn(op, xin,):
+        for attr in op.attrs:
+            temp = getattr(xin, attr)
+            if callable(temp):
+                pmsg = temp()
+            else:
+                pmsg = temp
+            print(op.message, attr, '=', pmsg, file=file)
+    return _print_fn
+
+def print(x, message="", printfn='print', message_prefix="DEBUG - ",
+          file=sys.stdout):
     """
     Non-Theano version outputs to the logger at the debug level.
 
@@ -229,30 +228,39 @@ def print(x, message="", printfn='print'):
         - 'debugprint': use theano.printing.debugprint
         - 'eval' : try to call x's `eval` method. If successful,
           print the output, otherwise fall back on theano.printing.Print
+    message_prefix: string
+        String to prepend to the message. Can be used to distinguish
+        different types of outputs. Defaults to "DEBUG - ".
+    file: file handle
+        Where to print the value; default is 'sys.stdout'.
+        Same argument as used in print() or theano.printing.debugprint.
     """
     if is_theano_object(x):
-        msg = "DEBUG - " + message
+        msg = message_prefix + message
         if printfn == 'print':
-            return theano.printing.Print(msg)(x)
+            return theano.printing.Print(msg, global_fn=_get_print_fn(file))(x)
         elif printfn == 'debugprint':
             print(msg)
-            theano.printing.debugprint(x)
+            theano.printing.debugprint(x, file=file)
             return x
         elif printfn == 'eval':
             try:
                 val = x.eval()
             except theano.gof.fg.MissingInputError:
-                return theano.printing.Print(msg)(x)
+                return theano.printing.Print(msg, global_fn=_get_print_fn(file))(x)
             else:
                 print(msg + " Value of {}: {}".format(str(x), val))
                 return x
+        else:
+            raise ValueError("Unrecognized print flag '{}'."
+                             .format(printfn))
     else:
         if len(message) > 0 and message[-1] != " ":
             msg = message + " "
         else:
             msg = message
         #logger.debug(msg + str(x))
-        builtins.print("DEBUG - " + msg + str(x))
+        builtins.print(message_prefix + msg + str(x), file=file)
         return x
 
 #######################
@@ -371,15 +379,16 @@ def _expand_args(arglst):
             yield arg
 
 def is_theano_variable(*var):
-    return cf.use_theano and any(isinstance(v, theano.tensor.TensorVariable)
+    return 'theano' in sys.modules and any(isinstance(v, _gettheano().tensor.TensorVariable)
                                  for v in _expand_args(var))
 def is_theano_object(*obj):
-    return cf.use_theano and any(isinstance(o, theano.gof.Variable)
+    return 'theano' in sys.modules and any(isinstance(o, _gettheano().gof.Variable)
                                  for o in _expand_args(obj))
 def is_constant(*obj):
     # Both symbolic and shared objects return False
-    return not cf.use_theano or builtins.all(isinstance(c, theano.tensor.TensorConstant)
-                                    for c in _expand_args(obj))
+    return 'theano' not in sys.modules or builtins.all(
+        isinstance(c, (_gettheano().tensor.TensorConstant, Number))
+        for c in _expand_args(obj))
 def isshared(*var):
     if 'theano' in sys.modules:
         return any(isinstance(v, (_getT().sharedvar.SharedVariable, ShimmedShared))

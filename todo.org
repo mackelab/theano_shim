@@ -1,3 +1,4 @@
+* TODO Combine shim.eval() and shim.graph.eval()
 * TODO Split random number functionality to its own module
 * TODO Scan wrapper
 * TODO theano.function wrapper

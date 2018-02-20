@@ -2,6 +2,7 @@
 Shimmed Graph utilities:
    graph compilation, traversal, listing inputs...
 """
+import collections
 from . import core
 from . import config as cf
 
@@ -49,12 +50,39 @@ def eval(expr, inputs=None, max_cost=10):
         inputs = {}
     return expr.eval(inputs)
 
-# def inputs(x, *args, **kwargs):
-#     """
-#     Wrapper for theano.gof.graph.inputs.
-#     Returns an empty list if Theano is not loaded.
-#     """
-#     if not cf.use_theano:
-#         return []
-#     else:
-#         return core.theano.gof.graph.inputs(x, *args, **kwargs)
+def is_computable(varlist, with_inputs=None):
+    """
+    Returns True if the variables in varlist can be numerically evaluated
+    using only the inputs in `with_inputs`. In other words, the computational
+    graph associated to varlist is composed only of constants and shared variables,
+    along with the symbolic variables in `with_inputs`.
+    If varlist is not a Theano graph, it is always computable.
+    """
+    if ( not isinstance(varlist, collections.Iterable)
+         or isinstance(varlist, str) ):
+        raise ValueError("theano_shim.is_computable requires a list as first argument.")
+    if with_inputs is None:
+        with_inputs = []
+    computable = True
+    for var in varlist:
+        if is_theano_variable(var): # Required because varlist may contain non-Theano objects
+            if is_theano_variable( set(theano.gof.graph.inputs([var])).difference(with_inputs) ):
+                computable = False
+                break
+    return computable
+
+def inputs(varlist, *args, **kwargs):
+    """
+    Wrapper for theano.gof.graph.inputs.
+    Returns an empty list for non symbolic variables
+    """
+    if ( not isinstance(varlist, collections.Iterable)
+         or isinstance(varlist, str) ):
+        raise ValueError("theano_shim.is_computable requires a list as first argument.")
+    if core.is_theano_object(varlist):
+        return core._gettheano().gof.graph.inputs(varlist, *args, **kwargs)
+    else:
+        return []
+
+def symbolic_inputs(varlist, *args, **kwargs):
+    return [v for v in inputs(varlist, *args, **kwargs) if core.is_theano_variable(v)]
