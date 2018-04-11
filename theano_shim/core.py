@@ -160,7 +160,7 @@ class LazyEval:
 
 def is_computable(varlist, with_inputs=None):
     logger.warning("Deprecation warning: theano_shim.is_computable() is deprecated. "
-                   "Use theano_shim.graph.is_computable().")
+                   "Use theano_shim.graph.is_computable(). This test has NOT been executed.")
 
 ##########################
 # Managing theano updates

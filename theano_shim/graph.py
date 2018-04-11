@@ -42,7 +42,7 @@ def eval(expr, inputs=None, max_cost=10):
         return expr
 
     # "Standard" code path
-    cost = len(core.theano.gof.graph.ancestors([expr]))
+    cost = len(core.gettheano().gof.graph.ancestors([expr]))
     if max_cost is not None and cost > max_cost:
         raise TooCostly("Expression has {} ancestors, which exceeds the limit of {}."
                         .format(cost, max_cost))
@@ -65,8 +65,8 @@ def is_computable(varlist, with_inputs=None):
         with_inputs = []
     computable = True
     for var in varlist:
-        if is_theano_variable(var): # Required because varlist may contain non-Theano objects
-            if is_theano_variable( set(theano.gof.graph.inputs([var])).difference(with_inputs) ):
+        if core.is_theano_variable(var): # Required because varlist may contain non-Theano objects
+            if core.is_theano_variable( set(core.gettheano().gof.graph.inputs([var])).difference(with_inputs) ):
                 computable = False
                 break
     return computable
