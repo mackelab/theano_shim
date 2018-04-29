@@ -3,11 +3,37 @@ Shimmed Graph utilities:
    graph compilation, traversal, listing inputs...
 """
 import collections
+import itertools
 from . import core
-from . import config as cf
+from .config import config as cf
 
 class TooCostly(Exception):
     pass
+
+######################
+# Graph manipulation
+
+def clone(output, replace=None, *args, **kwargs):
+    """
+    Use as theano.clone().
+    TODO: Something useful with non-symbolic output ?
+    """
+    if not core.is_theano_variable(output):
+        raise ValueError("`shim.graph.clone()` is undefined for non-symbolic outputs")
+    return core.theano.clone(output, replace, *args, **kwargs)
+
+#####################
+# Graph compilation
+
+def compile(inputs, outputs, *args, **kwargs):
+    """
+    Use as theano.function().
+    TODO: Something useful with non-symbolic output ?
+    """
+    if not any(core.is_theano_variable(arg)
+               for arg in itertools.chain([inputs, outputs], args, kwargs.values())):
+        raise ValueError("`shim.graph.function()` is undefined for non-symbolic outputs")
+    return core.theano.function(inputs, outputs, *args, **kwargs)
 
 def eval(expr, inputs=None, max_cost=10):
     """
@@ -49,6 +75,9 @@ def eval(expr, inputs=None, max_cost=10):
     if inputs is None:
         inputs = {}
     return expr.eval(inputs)
+
+######################
+# Graph inspection
 
 def is_computable(varlist, with_inputs=None):
     """
