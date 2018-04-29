@@ -41,7 +41,9 @@ import scipy as sp
 import scipy.signal
 import scipy.special
 
-from . import config as cf
+from .config import config
+from .config import _gettheano, _getT
+cf = config
 
 logger = logging.getLogger('theano_shim')
 logger.setLevel(logging.INFO)
@@ -63,6 +65,9 @@ def load(load_theano=True, reraise=False):
     reraise: Boolean
         If true, import errors will be reraised to allow them to propagate to the parent.
     """
+    #TODO: Move as much as possible to config.Config
+    #      And/or move the function to config, and import config.load
+
     global theano, T
 
     if load_theano:
@@ -78,6 +83,9 @@ def load(load_theano=True, reraise=False):
     else:
         cf.use_theano = False
 
+    if cf.floatX == 'float32':
+        config.make_constants_32bit()
+
     if cf.use_theano:
         import theano.ifelse
         import theano.tensor as T
@@ -90,16 +98,16 @@ def load(load_theano=True, reraise=False):
         cf.inf = 1e12
         cf.RandomStreams = theano.tensor.shared_randomstreams.RandomStreams
 
-        if cf.sys.version_info.minor >= 5:
-            cf.Numeric = cf.Union[np.ndarray, T.TensorVariable]
+        # if cf.sys.version_info.minor >= 5:
+        #     cf.Numeric = cf.Union[np.ndarray, T.TensorVariable]
 
     else:
         cf.lib = np
         cf.inf = np.inf
         cf.RandomStreams = ShimmedRandomStreams
 
-        if cf.sys.version_info.minor >= 5:
-            cf.Numeric = cf.Union[np.ndarray]
+        # if cf.sys.version_info.minor >= 5:
+        #     cf.Numeric = cf.Union[np.ndarray]
 
 def gettheano():
     if not cf.use_theano:
@@ -111,22 +119,6 @@ def getT():
         raise RuntimeError("Tried to access theano.tensor, but Theano has not been loaded.")
     else:
         return T
-
-# These forms will retrieve theano or theano.tensor, whether or not cf.use_theano == True,
-# as long as any module in the stack has loaded them
-# These functions should only be used within this module, for cases where we need to treat
-# Theano arguments even if use_theano == False. Type-checking is an example of such a use case.
-def _gettheano():
-    if 'theano' in sys.modules:
-        return sys.modules['theano']
-    else:
-        raise RuntimeError("Tried to access theano, but it has not been loaded.")
-def _getT():
-    if 'theano' in sys.modules:
-        return sys.modules['theano'].tensor
-    else:
-        raise RuntimeError("Tried to access theano.tensor, but Theano has not been loaded.")
-
 
 class LazyEval:
     """
@@ -198,7 +190,7 @@ def reset_updates():
 # Print statement
 def _get_print_fn(file=sys.stdout):
     """Return the same function as theano.printing._print_fn, with
-    the different that 'file' is passed as a keyword argument to print().
+    the difference that 'file' is passed as a keyword argument to print().
     """
     def _print_fn(op, xin,):
         for attr in op.attrs:
@@ -318,12 +310,13 @@ def istype(obj, type_str):
     ----------
     obj: object
         The object of which we want to check the type.
-    type_str: string or iterable
+    type_str: string or dtype or iterable
         If `obj` is of this type, the function returns True,
         otherwise it returns False. Valid values of `type_str`
         are those expected for a dtype. Examples are:
-        - 'int', 'int32', etc.
+        - 'int', 'int32', 'uint', 'uint32', etc.
         - 'float', 'float32', etc.
+        - any NumPy dtype
         `type_str` can also be an iterable of aforementioned
         strings. Function will return True if `obj` is of any
         of the specified types
@@ -333,8 +326,10 @@ def istype(obj, type_str):
     bool
     """
     # Wrap type_str if it was not passed as an iterable
-    if isinstance(type_str, str):
+    if isinstance(type_str, str) or not isinstance(type_str, collections.Iterable):
         type_str = [type_str]
+    # Ensure we only have strings (not dtypes)
+    type_str = [str(ts) for ts in type_str]
     # Check type
     if not cf.use_theano or not isinstance(obj, theano.gof.Variable):
         return any(ts in str(np.asarray(obj).dtype) for ts in type_str)
@@ -411,6 +406,11 @@ def cast(x, dtype):
         - 'int16'
         - 'int32'
         - 'int64'
+        - 'uint8'
+        - 'uint16'
+        - 'uint32'
+        - 'uint64'
+        - 'float16'
         - 'float32'
         - 'float64'
         Can optionally be an equivalent numpy dtype, as returned by
@@ -423,12 +423,17 @@ def cast(x, dtype):
         return T.cast(x, dtype)
     else:
         val = ( np.int8(x) if dtype == 'int8'
-                 else np.int16(x) if dtype == 'int16'
-                 else np.int32(x) if dtype == 'int32'
-                 else np.int64(x) if dtype == 'int64'
-                 else np.float32(x) if dtype == 'float32'
-                 else np.float64(x) if dtype == 'float64'
-                 else None )
+                else np.int16(x) if dtype == 'int16'
+                else np.int32(x) if dtype == 'int32'
+                else np.int64(x) if dtype == 'int64'
+                else np.uint8(x) if dtype == 'uint8'
+                else np.uint16(x) if dtype == 'uint16'
+                else np.uint32(x) if dtype == 'uint32'
+                else np.uint64(x) if dtype == 'uint64'
+                else np.float16(x) if dtype == 'float16'
+                else np.float32(x) if dtype == 'float32'
+                else np.float64(x) if dtype == 'float64'
+                else None )
         if val is None:
             raise ValueError("Unrecognized type {}.".format(dtype))
         return val
@@ -455,10 +460,7 @@ def cast_int64(x):
         return np.int64(x)
 
 def cast_floatX(x):
-    if is_theano_object(x):
-        return T.cast(x, theano.config.floatX)
-    else:
-        return np.float(x)
+    return cast(x, dtype=cf.floatX)
 
 #####################
 # Simple convenience functions
@@ -613,23 +615,6 @@ def abs(x):
     else:
         return __builtins__['abs'](x)
 
-#####################
-# Set random functions
-
-class ShimmedRandomStreams:
-    def __init__(self, seed=None):
-        np.random.seed(seed)
-
-    def normal(self, size=(), avg=0.0, std=1.0, ndim=None):
-        return np.random.normal(loc=avg, scale=std, size=size)
-
-    def uniform(self, size=(), low=0.0, high=1.0, ndim=None):
-        return np.random.uniform(low, high, size)
-
-    def binomial(self, size=(), n=1, p=0.5, ndim=None):
-        return np.random.binomial(n, p, size)
-
-
 ######################
 # Logical and comparison operators
 
@@ -773,6 +758,21 @@ def switch(cond, ift, iff):
     else:
         return np.where(cond, ift, iff)
 
+#####################
+# Shimmed random functions
+
+class ShimmedRandomStreams:
+    def __init__(self, seed=None):
+        np.random.seed(seed)
+
+    def normal(self, size=(), avg=0.0, std=1.0, ndim=None):
+        return np.random.normal(loc=avg, scale=std, size=size)
+
+    def uniform(self, size=(), low=0.0, high=1.0, ndim=None):
+        return np.random.uniform(low, high, size)
+
+    def binomial(self, size=(), n=1, p=0.5, ndim=None):
+        return np.random.binomial(n, p, size)
 
 ######################
 # Shared variable constructor
@@ -848,6 +848,11 @@ cf.add_terminating_types([ShimmedShared])
 
 def shared(value, name=None, strict=False, allow_downcast=None, symbolic=True,
            **kwargs):
+    """
+    In contrast to Theano's `shared()`, the broadcast pattern is set to be compatible
+    with NumPy's behaviour; i.e., any axis in `value` with dimension 1 is considered
+    broadcastable.
+    """
     if not isinstance(value, np.ndarray):
         value = np.asarray(value)
     if 'dtype' in kwargs:
@@ -863,7 +868,6 @@ def shared(value, name=None, strict=False, allow_downcast=None, symbolic=True,
                              broadcastable=broadcast_pattern, **kwargs)
     else:
         return ShimmedShared(value, name, strict, allow_downcast, **kwargs)
-
 
 ######################
 # Interchangeable set_subtensor
@@ -1147,6 +1151,11 @@ def all(x):
         return T.all(x)
     else:
         return np.all(x)
+def arange(start, stop=None, step=1, dtype=None):
+    if is_theano_object(start, stop, step, dtype):
+        return T.arange(start, stop, step, dtype)
+    else:
+        return np.arange(start, stop, step, dtype)
 def concatenate(tensor_list, axis=0):
     if any(is_theano_object(x) for x in tensor_list):
         return T.concatenate(tensor_list, axis)

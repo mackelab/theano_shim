@@ -4,7 +4,7 @@ import scipy as sp
 import scipy.sparse
 
 from . import core
-from . import config as cf
+from .config import config as cf
 from .core import is_theano_object
 
 # Add to TerminatingTypes
