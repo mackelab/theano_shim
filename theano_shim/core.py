@@ -1156,6 +1156,11 @@ def arange(start, stop=None, step=1, dtype=None):
         return T.arange(start, stop, step, dtype)
     else:
         return np.arange(start, stop, step, dtype)
+def broadcast_to(array, shape, subok=False):
+    if is_theano_object(array, shape):
+        return T.ones(shape) * array
+    else:
+        return np.broadcast_to(array, shape, subok)
 def concatenate(tensor_list, axis=0):
     if any(is_theano_object(x) for x in tensor_list):
         return T.concatenate(tensor_list, axis)
