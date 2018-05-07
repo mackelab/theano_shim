@@ -1171,6 +1171,11 @@ def cos(x):
         return T.cos(x)
     else:
         return np.cos(x)
+def cosh(x):
+    if is_theano_object(x):
+        return T.cosh(x)
+    else:
+        return np.cosh(x)
 def clip(a, a_min, a_max):
     if is_theano_object(a, a_min, a_max):
         return T.clip(a, a_min, a_max)
@@ -1233,6 +1238,16 @@ def sin(x):
         return T.sin(x)
     else:
         return np.sin(x)
+def sinh(x):
+    if is_theano_object(x):
+        return T.sinh(x)
+    else:
+        return np.sinh(x)
+def sqrt(x):
+    if is_theano_object(x):
+        return T.sqrt(x)
+    else:
+        return np.sqrt(x)
 def stack(tensors, axis=0):
     if is_theano_object(*tensors):
         return T.stack(tensors, axis)
@@ -1251,6 +1266,16 @@ def sum(x, axis=None, dtype=None, acc_dtype=None, keepdims=np._NoValue):
         return result
     else:
         return np.sum(x, axis=axis, dtype=dtype, keepdims=keepdims)
+def tan(x):
+    if is_theano_object(x):
+        return T.tan(x)
+    else:
+        return np.tan(x)
+def tanh(x):
+    if is_theano_object(x):
+        return T.tanh(x)
+    else:
+        return np.tanh(x)
 def tile(x, reps, ndim=None):
     if is_theano_object(x):
         return T.tile(x, reps, ndim)
