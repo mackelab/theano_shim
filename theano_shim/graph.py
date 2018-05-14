@@ -45,8 +45,10 @@ def eval(expr, inputs=None, max_cost=10):
 
     Parameters
     ----------
-    expr: Theano graph
-        The theano expression we want to evaluate.
+    expr: Theano graph | slice | iterable (TODO)
+        The theano expression we want to evaluate. If a slice, each component
+        of the slice ('start', 'stop', 'step') is evaluated.
+        TODO: iterable
     inputs: dict (optional; default: {})
         Dictionary of inputs to be past to `eval`.
     max_cost: int (optional; default: 10)
@@ -66,6 +68,8 @@ def eval(expr, inputs=None, max_cost=10):
         return expr.get_value()
     elif not core.is_theano_object(expr):
         return expr
+    elif isinstance(expr, slice):
+        return slice(eval(expr.start), eval(expr.stop), eval(expr.step))
 
     # "Standard" code path
     cost = len(core.gettheano().gof.graph.ancestors([expr]))
@@ -94,7 +98,12 @@ def is_computable(varlist, with_inputs=None):
         with_inputs = []
     computable = True
     for var in varlist:
-        if core.is_theano_variable(var): # Required because varlist may contain non-Theano objects
+        if isinstance(var, slice):
+            # Must come before `is_theano_variable`
+            if not is_computable([var.start, var.stop, var.step]):
+                computable = False
+                break
+        elif core.is_theano_variable(var): # Required because varlist may contain non-Theano objects
             if core.is_theano_variable( set(core.gettheano().gof.graph.inputs([var])).difference(with_inputs) ):
                 computable = False
                 break
