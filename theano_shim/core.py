@@ -203,7 +203,7 @@ def _get_print_fn(file=sys.stdout):
             print(op.message, attr, '=', pmsg, file=file)
     return _print_fn
 
-def print(x, message="", printfn='print', message_prefix="DEBUG - ",
+def print(x, message=None, printfn='print', message_prefix="DEBUG - ",
           file=sys.stdout):
     """
     Non-Theano version outputs to the logger at the debug level.
@@ -213,7 +213,8 @@ def print(x, message="", printfn='print', message_prefix="DEBUG - ",
     x:
         The value of this graph will be output
     message: string
-        Will be prepended to the output
+        Will be prepended to the output. If unspecified, the function
+        checks if `x` has a `name` attribute and uses it if present.
     printfn: string
         Determines the function used to print the variable; only
         has an effect on Theano variables. Possible values are:
@@ -228,6 +229,9 @@ def print(x, message="", printfn='print', message_prefix="DEBUG - ",
         Where to print the value; default is 'sys.stdout'.
         Same argument as used in print() or theano.printing.debugprint.
     """
+    if message is None:
+        message = getattr(x, 'name', "")
+        if message is None: message = ""  # x.name might be None
     if is_theano_object(x):
         msg = message_prefix + message
         if printfn == 'print':
