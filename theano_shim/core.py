@@ -445,6 +445,8 @@ def cast(x, dtype, same_kind=True):
         return x
     elif is_theano_object(x):
         return T.cast(x, dtype)
+    elif hasattr(x, 'astype'):
+        return x.astype(dtype)
     else:
         val = ( np.int8(x, keepdims=True) if dtype == 'int8'
                 else np.int16(x, keepdims=True) if dtype == 'int16'
