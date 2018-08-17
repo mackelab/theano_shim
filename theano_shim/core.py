@@ -47,7 +47,7 @@ from .config import _gettheano, _getT
 cf = config
 
 logger = logging.getLogger('theano_shim')
-logger.setLevel(logging.INFO)
+#logger.setLevel(logging.INFO)
 
 
 ######################
@@ -159,7 +159,7 @@ def is_computable(varlist, with_inputs=None):
 # Managing theano updates
 
 def add_update(variable, value):
-    logger.info("Adding Theano update : {} -> {}".format(variable.name, str(value)))
+    logger.debug("Adding Theano update : {} -> {}".format(variable.name, str(value)))
     if not isshared(variable):
         raise ValueError("The updates mechanism only applies to shared variables.")
 
@@ -184,7 +184,7 @@ def get_updates():
     return cf.theano_updates
 
 def reset_updates():
-    logger.info("Clearing Theano updates")
+    logger.debug("Clearing Theano updates")
     cf.theano_updates = collections.OrderedDict()
 
 #######################
