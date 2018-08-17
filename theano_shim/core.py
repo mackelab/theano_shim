@@ -260,6 +260,15 @@ def print(x, message=None, printfn='print', message_prefix="DEBUG - ",
         builtins.print(message_prefix + msg + str(x), file=file)
         return x
 
+def pprint(x):
+    """
+    Call pretty printer (`pprint`) on Theano objects, otherwise standard `print`
+    """
+    if is_theano_object(x):
+        theano.printing.pprint(x)
+    else:
+        print(x)
+
 #######################
 # Assert equivalent
 def check(stmt):
