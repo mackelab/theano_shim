@@ -345,7 +345,8 @@ def istype(obj, type_str):
     # Ensure we only have strings (not dtypes)
     type_str = [str(ts) for ts in type_str]
     # Check type
-    if not cf.use_theano or not isinstance(obj, theano.gof.Variable):
+    if ('theano' not in sys.modules
+        or not isinstance(obj, _gettheano().gof.Variable)):
         return any(ts in str(np.asarray(obj).dtype) for ts in type_str)
             # We cast to string to be consistent with Theano, which uses
             # strings for it's dtypes
