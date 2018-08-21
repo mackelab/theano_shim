@@ -265,9 +265,9 @@ def pprint(x):
     Call pretty printer (`pprint`) on Theano objects, otherwise standard `print`
     """
     if is_theano_object(x):
-        theano.printing.pprint(x)
+        return theano.printing.pprint(x)
     else:
-        print(x)
+        return str(x)
 
 #######################
 # Assert equivalent
