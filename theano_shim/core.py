@@ -360,6 +360,9 @@ def _expand_args(arglst):
     """
     if not isinstance(arglst, collections.Iterable):
         arglst = [arglst]
+    elif ('theano' in sys.modules
+          and isinstance(arglst, _gettheano().gof.Variable)):
+        arglst = [arglst]
     elif isinstance(arglst, cf._TerminatingTypes):
         arglst = [arglst]
     for arg in arglst:
