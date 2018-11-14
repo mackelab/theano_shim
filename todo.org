@@ -6,3 +6,5 @@
 * DONE Make shim.sparse optional load.
   CLOSED: [2017-05-24 Wed 15:20]
   Only Load scipy.sparse and theano.sparse if it is loaded.
+* TODO Add __all__ to core.py and put all top level imports in __init__.py
+  This should allow e.g. to combine shim.eval() and shim.graph.eval()
