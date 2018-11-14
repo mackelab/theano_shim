@@ -816,6 +816,33 @@ class ShimmedRandomStreams:
         return np.random.binomial(n, p, size)
 
 ######################
+# Tensor constructors
+
+def shape_to_broadcast(shape):
+    """
+    Returns the default broadcastable pattern for a shape, replacing
+    1s with `True`.
+    """
+    return tuple(n==1 for n in shape)
+
+def tensor(object, name=None, dtype=None):
+    broadcastable = None
+    if isinstance(object, tuple):
+        shape = object
+    elif hasattr(object, 'shape'):
+        shape = object.shape
+        if dtype is None: dtype = object.dtype
+    elif hasattr(object, 'broadcastable'):
+        if dtype is None: dtype = object.dtype
+        broadcastable = object.broadcastable
+    if not cf.use_theano:
+        # If `shape` is undefined at this point, we gave a wrong argument
+        return np.array(shape, dtype=dtype)
+    else:
+        if broadcastable is None: broadcastable = shape_to_broadcast(shape)
+        return getT().tensor(dtype, broadcastable, name=name)
+
+######################
 # Shared variable constructor
 
 class ShimmedShared(np.ndarray):
