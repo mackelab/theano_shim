@@ -158,27 +158,29 @@ def is_computable(varlist, with_inputs=None):
 ##########################
 # Managing theano updates
 
-def add_update(variable, value):
-    logger.debug("Adding Theano update : {} -> {}".format(variable.name, str(value)))
-    if not isshared(variable):
-        raise ValueError("The updates mechanism only applies to shared variables.")
-
-    cf.theano_updates[variable] = value
-
-def add_updates(updates):
+def add_update(variable, value=None):
     """
     Parameters
     ----------
-    updates: dict or iterable
-        Either a dictionary of `variable:value` pairs, or an iterable of
+    variable: shared variable | dict | iterable
+        Shared variable to update.
+        Can also be a dictionary of `variable:value` pairs, or an iterable of
         `(variable, value)` tuples.
+    value: symbolic expression
+        Value to assign to variable. Ignored if `variable` is a dict or iterable
     """
-    if isinstance(updates, dict):
-        for key, val in updates.items():
+    if isinstance(variable, dict):
+        for key, val in variable.items():
+            add_update(key, val)
+    elif isinstance(variable, collections.Sequence):
+        for key, val in variable:
             add_update(key, val)
     else:
-        for key, val in updates:
-            add_update(key, val)
+        logger.debug("Adding Theano update : {} -> {}".format(variable.name, str(value)))
+        if not isshared(variable):
+            raise ValueError("The updates mechanism only applies to shared variables.")
+        cf.theano_updates[variable] = value
+add_updates = add_update
 
 def get_updates():
     return cf.theano_updates
