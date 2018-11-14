@@ -1271,6 +1271,13 @@ def gammaln(x):
         return T.gammaln(x)
     else:
         return sp.special.gammaln(x)
+def isfinite(x, *args, **kwargs):
+    """Always returns `True` on symbolic inputs."""
+    if is_theano_object(x):
+        return True
+    else:
+        assert not is_theano_object(kwargs.values())
+        return np.isfinite(x, **kwargs)
 def log(x):
     if is_theano_object(x):
         return T.log(x)
