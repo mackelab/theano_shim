@@ -552,7 +552,8 @@ def asarray(x, dtype=None, broadcastable=None):
     return retval
 
 def asscalar(x):
-    if isscalar(x):
+    if isscalar(x) and not hasattr(x, 'ndim'):
+        # shim.isscalar(x) returns True for 0-dim arrays
         return x
     elif is_theano_object(x):
         if all(x.broadcastable):
