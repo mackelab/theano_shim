@@ -3,7 +3,9 @@ Shimmed Graph utilities:
    graph compilation, traversal, listing inputs...
 """
 import collections
+from collections import Iterable
 import itertools
+import builtins
 from . import core
 from .config import config as cf
 
@@ -29,7 +31,7 @@ def clone(output, replace=None, *args, **kwargs):
     Use as theano.clone().
     TODO: Something useful with non-symbolic output ?
     """
-    if not core.is_theano_variable(output):
+    if not core.is_theano_object(output):
         raise ValueError("`shim.graph.clone()` is undefined for non-symbolic outputs")
     return core.theano.clone(output, replace, *args, **kwargs)
 
@@ -41,7 +43,7 @@ def compile(inputs, outputs, *args, **kwargs):
     Use as theano.function().
     TODO: Something useful with non-symbolic output ?
     """
-    if not any(core.is_theano_variable(arg)
+    if not any(core.is_theano_object(arg)
                for arg in itertools.chain([inputs, outputs], args, kwargs.values())):
         raise ValueError("`shim.graph.function()` is undefined for non-symbolic outputs")
     return core.theano.function(inputs, outputs, *args, **kwargs)
@@ -112,6 +114,47 @@ def eval(expr, givens=None, max_cost=10, if_too_costly='raise', inputs=None):
 ######################
 # Graph inspection
 
+# _stablehash and _tobytes also in `mackelab.utils`
+def _stablehash(o):
+    """
+    Builtin `hash` is not stable across sessions for security reasons.
+    """
+    import hashlib
+    return hashlib.sha1(_tobytes(o)).hexdigest()
+
+def _tobytes(o):
+    if isinstance(o, Iterable) and not isinstance(o, cf.TerminatingTypes):
+        return b''.join(_tobytes(oi) for oi in o)
+    elif isinstance(o, str):
+        return o.encode('utf8')
+    elif isinstance(o, bytes):
+        return o
+    else:
+        return bytes(o)
+
+def hash(graph):
+    """
+    Return a value which is consistent on equivalent graphs.
+
+    ..Note: The implementation may change. Hashes can be used for memoization,
+    but should not be used for long term storage.
+    FIXME: Current implementation works by hashing the result of `shim.pprint`.
+    This is not ideal, because using the same name for different variables
+    might not be resolved, and shape/dtype is not included.
+
+    Parameters
+    ----------
+    graph: symbolic | list of symbolics
+        If a list, a single value is returned, wich is dependent on the order.
+        Nested lists also work, but note that `hash([a, b]) != hash([a, [b]])`.
+    """
+
+    if (isinstance(graph, collections.Iterable)
+        and not isinstance(graph, cf.TerminatingTypes)):
+        return _stablehash(tuple(hash(g) for g in graph))
+    else:
+        return _stablehash(core.pprint(graph))
+
 def is_computable(varlist, with_inputs=None):
     """
     Returns True if the variables in varlist can be numerically evaluated
@@ -143,13 +186,26 @@ def inputs(varlist, *args, **kwargs):
     Wrapper for theano.gof.graph.inputs.
     Returns an empty list for non symbolic variables
     """
-    if ( not isinstance(varlist, collections.Iterable)
+    if isinstance(varlist, cf.GraphType):
+        # Wrap calls on single variables with a list
+        varlist = [varlist]
+    elif ( not isinstance(varlist, collections.Iterable)
          or isinstance(varlist, str) ):
         raise ValueError("theano_shim.graph.inputs requires a list as first argument.")
     if core.is_theano_object(varlist):
         return core._gettheano().gof.graph.inputs(varlist, *args, **kwargs)
     else:
         return []
+
+def symbolic_inputs(varlist, *args, **kwargs):
+    return [v for v in inputs(varlist, *args, **kwargs) if core.is_symbolic(v)]
+
+def shared_inputs(varlist, *args, **kwargs):
+    return [v for v in inputs(varlist, *args, **kwargs)
+              if isinstance(v, cf.SharedType)]
+
+def pure_symbolic_inputs(varlist, *args, **kwargs):
+    return [v for v in inputs(varlist, *args, **kwargs) if core.is_pure_symbolic(v)]
 
 def variables(i, o=None):
     """
@@ -160,6 +216,10 @@ def variables(i, o=None):
     if o is None:
         o = i
         i = inputs(o)
+    if isinstance(i, cf.GraphType):
+        i = [i]
+    if isinstance(o, cf.GraphType):
+        o = [o]
     if ( not isinstance(i, collections.Iterable)
          or isinstance(i, str) ):
         raise ValueError(
@@ -168,9 +228,6 @@ def variables(i, o=None):
         return core._gettheano().gof.graph.variables(i, o)
     else:
         return []
-
-def symbolic_inputs(varlist, *args, **kwargs):
-    return [v for v in inputs(varlist, *args, **kwargs) if core.is_theano_variable(v)]
 
 def is_same_graph(var1, var2, givens=None, debug=False):
     """
