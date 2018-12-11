@@ -35,7 +35,6 @@ import logging
 import builtins
 import collections
 import inspect
-from numbers import Number
 import sys
 import numpy as np
 import scipy as sp
@@ -94,7 +93,10 @@ def load(load_theano=True, reraise=False):
         import theano.tensor.signal.conv
         import theano.sparse
         import theano.tensor.shared_randomstreams  # CPU only
+        import theano.sandbox.rng_mrg
         #from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams  # CPU & GPU
+
+        cf.add_terminating_types((T.TensorType, T.TensorVariable))
 
         cf.inf = 1e12
         cf.RandomStreams = theano.tensor.shared_randomstreams.RandomStreams
@@ -267,7 +269,7 @@ def pprint(x):
     Call pretty printer (`pprint`) on Theano objects, otherwise standard `print`
     """
     if is_theano_object(x):
-        return theano.printing.pprint(x)
+        return _gettheano().printing.pprint(x)
     else:
         return str(x)
 
@@ -393,20 +395,29 @@ def _expand_args(arglst):
         else:
             yield arg
 
-def is_theano_variable(*var):
-    return 'theano' in sys.modules and any(isinstance(v, _gettheano().tensor.TensorVariable)
-                                 for v in _expand_args(var))
-def is_theano_object(*obj):
-    return 'theano' in sys.modules and any(isinstance(o, _gettheano().gof.Variable)
+def is_graph_object(*obj):
+    # return 'theano' in sys.modules and any(isinstance(o, _gettheano().gof.Variable)
+    return 'theano' in sys.modules and any(isinstance(o, cf.GraphType)
                                  for o in _expand_args(obj))
+is_theano_object = is_graph_object
 def is_constant(*obj):
     # Both symbolic and shared objects return False
     return 'theano' not in sys.modules or builtins.all(
-        isinstance(c, (_gettheano().tensor.TensorConstant, Number))
+        isinstance(c, cf.ConstantTypes)
         for c in _expand_args(obj))
+def is_pure_symbolic(*var):
+    # return 'theano' in sys.modules and any(isinstance(v, _gettheano().tensor.TensorVariable)
+    return 'theano' in sys.modules and any(isinstance(v, cf.SymbolicType)
+                                 for v in _expand_args(var))
+is_theano_variable = is_pure_symbolic
+def is_symbolic(*var):
+    return 'theano' in sys.modules and builtins.any(
+        isinstance(v, cf.GraphType)
+        and not isinstance(v, cf.ConstantTypes)
+        for v in _expand_args(var))
 def isshared(*var):
     if 'theano' in sys.modules:
-        return any(isinstance(v, (_getT().sharedvar.SharedVariable, ShimmedShared))
+        return any(isinstance(v, (cf.SharedType, ShimmedShared))
                    for v in _expand_args(var))
     else:
         return any(isinstance(v, ShimmedShared)
@@ -512,13 +523,13 @@ def round(x):
         res = round(x)
     return res
 
-def asvariable(x, dtype=None):
-    if cf.use_theano in sys.modules:
+def asvariable(x, dtype=None, name=None):
+    if 'theano' in sys.modules:
         # No `isinstance` here: the point is to cast to a Theano variable
         if dtype is not None:
-            return T.cast(T.as_tensor_variable(x), dtype)
+            return cast(T.as_tensor_variable(x, name=name), dtype)
         else:
-            return T.as_tensor_variable(x)
+            return T.as_tensor_variable(x, name=name)
     else:
         return np.asarray(x, dtype=dtype)
 
@@ -801,7 +812,46 @@ def switch(cond, ift, iff):
         return np.where(cond, ift, iff)
 
 #####################
-# Shimmed random functions
+# Loop constructs
+
+def scan(fn, sequences=None, outputs_info=None, non_sequences=None, n_steps=None,
+         truncate_gradient=-1, go_backwards=False, mode=None, name=None, profile=False,
+         allow_gc=None, strict=False, return_list=False):
+    """
+    WIP: Does not support taps. When using NumPy, every argument after :param:n_steps
+    except :param:return_list is ignored.
+    """
+    if is_theano_object(sequences, outputs_info, non_sequences, n_steps):
+        return gettheano().scan(
+            fn, sequences, outputs_info, non_sequences, n_steps,
+            truncate_gradient, go_backwards, mode, name, profile, allow_gc,
+            strict, return_list)
+    else:
+        if not isinstance(sequences, (tuple, list)):
+            sequences = (sequences,)
+        if non_sequences is None:
+            non_sequences = ()
+        if isinstance(outputs_info, dict):
+            raise TypeError("Taps not yet supported.")
+        if n_steps is None:
+            n_steps = len(sequences[0])
+
+        accumulator = [np.zeros((n_steps,) + o.shape) for o in outputs_info]
+        cur_val = outputs_info
+        for t, i in zip(zip(*sequences), range(n_steps)):
+            cur_val, updates = fn(*t, *cur_val, *non_sequences)
+            for a, v in zip(accumulator, cur_val):
+                a[i] = v
+
+        if len(accumulator) == 1 and not return_list:
+            accumulator = accumulator[0]
+        if len(updates) > 0:
+            logger.warning("NumPy `scan` produced updates for: {}, which were "
+                           "ignored.".format(updates.keys()))
+        return accumulator, updates
+
+#####################
+# Random number generation
 
 class ShimmedRandomStreams:
     def __init__(self, seed=None):
@@ -815,6 +865,30 @@ class ShimmedRandomStreams:
 
     def binomial(self, size=(), n=1, p=0.5, ndim=None):
         return np.random.binomial(n, p, size)
+
+def copy_random_state(from_rng, to_rng):
+    """
+    Set the state of the random number generator (RNG) :param:to so that it
+    matches that of :param:from.
+
+    Parameters
+    ----------
+    from:  theano RandomStreams | MRG_RandomStreams
+    to: theano RandomStreams | MRG_RandomStreams
+    """
+    # Based on a function defined in the Theano docs: http://deeplearning.net/software/theano/tutorial/examples.html#copying-random-state-between-theano-graphs
+    # Ensure the two RNGs are of the same type
+    assert type(from_rng) is type(to_rng)
+    # Ensure that their state updates are consistent
+    # `str(su1[1])` retrieves something like `RandomFunction{uniform}.1`
+    assert len(from_rng.state_updates) == len(to_rng.state_updates)
+    assert all(str(su1[1]) == str(su2[1])
+               for su1, su2 in zip(from_rng.state_updates,
+                                   to_rng.state_updates))
+    if isinstance(from_rng, _gettheano().sandbox.rng_mrg.MRG_RandomStreams):
+        to_rng.rstate = from_rng.rstate
+    for (su1, su2) in zip(from_rng.state_updates, to_rng.state_updates):
+        su2[0].set_value(su1[0].get_value())
 
 ######################
 # Tensor constructors
