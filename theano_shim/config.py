@@ -2,6 +2,7 @@
 Global configuration variables
 """
 import sys
+from numbers import Number
 # Make it safe to assume Python 3 when testing version
 if sys.version_info.major < 3:
     raise RuntimeError("theano_shim requires Python 3. You are using {}."
@@ -67,15 +68,52 @@ class Config:
     # an argument in core._expand_args.
     # For example, if the sparse module is loaded, sparse types are added to TerminatingTypes,
     # since we will never store a Theano object as an element of a SciPy sparse matrix
-    _TerminatingTypes = (str,np.ndarray)
+    _TerminatingTypes = (bytes,str,np.ndarray)
 
     def add_terminating_types(self, type_list):
         self._TerminatingTypes = tuple( set(type_list).union( self._TerminatingTypes ) )
+    @property
+    def TerminatingTypes(self):
+        if 'theano' in sys.modules:
+            dyntypes = (self.SymbolicType, self.GraphType) + self.ConstantTypes
+        else:
+            dyntypes = self.ConstantTypes
+        return self._TerminatingTypes + dyntypes
 
     @staticmethod
     def make_constants_32bit():
         # TODO: Have a maintainable list of these constants
         make_32bit_var(np, 'pi')
+
+    @property
+    def SymbolicType(self):
+        # FIXME: What about ScalarVariable ? SharedVariable ?
+        return _getT().TensorVariable
+    @property
+    def GraphType(self):
+        return _gettheano().gof.Variable
+    @property
+    def ConstantType(self):
+        return _gettheano().gof.Constant
+    @property
+    def TensorConstantType(self):
+        return _getT().TensorConstant
+    @property
+    def ScalarConstantType(self):
+        return _gettheano().scalar.ScalarConstant
+    @property
+    def SharedType(self):
+        return _getT().sharedvar.SharedVariable
+    @property
+    def ConstantTypes(self):
+        if 'theano' in sys.modules:
+            return (self.ConstantType, self.ScalarConstantType,
+                    self.TensorConstantType, Number)
+        else:
+            return (Number,)
+    @property
+    def RandomStateType(self):
+        return _getT().shared_randomstreams.RandomStateSharedVariable
 
     @property
     def floatX(self):
