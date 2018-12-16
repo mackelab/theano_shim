@@ -75,7 +75,8 @@ class Config:
     @property
     def TerminatingTypes(self):
         if 'theano' in sys.modules:
-            dyntypes = (self.SymbolicType, self.GraphType) + self.ConstantTypes
+            dyntypes = ((self.SymbolicType,) + self.GraphTypes
+                        + self.ConstantTypes)
         else:
             dyntypes = self.ConstantTypes
         return self._TerminatingTypes + dyntypes
@@ -90,8 +91,8 @@ class Config:
         # FIXME: What about ScalarVariable ? SharedVariable ?
         return _getT().TensorVariable
     @property
-    def GraphType(self):
-        return _gettheano().gof.Variable
+    def GraphTypes(self):
+        return (_gettheano().gof.Variable, self.RandomStreamType)
     @property
     def ConstantType(self):
         return _gettheano().gof.Constant
@@ -112,8 +113,14 @@ class Config:
         else:
             return (Number,)
     @property
+    def RandomStreamType(self):
+        return _getT().shared_randomstreams.RandomStreams
+    @property
     def RandomStateType(self):
         return _getT().shared_randomstreams.RandomStateSharedVariable
+    @property
+    def CompiledType(self):
+        return _gettheano().compile.function_module.Function
 
     @property
     def floatX(self):

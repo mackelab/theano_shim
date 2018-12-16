@@ -186,7 +186,7 @@ def inputs(varlist, *args, **kwargs):
     Wrapper for theano.gof.graph.inputs.
     Returns an empty list for non symbolic variables
     """
-    if isinstance(varlist, cf.GraphType):
+    if isinstance(varlist, cf.GraphTypes):
         # Wrap calls on single variables with a list
         varlist = [varlist]
     elif ( not isinstance(varlist, collections.Iterable)
@@ -216,9 +216,9 @@ def variables(i, o=None):
     if o is None:
         o = i
         i = inputs(o)
-    if isinstance(i, cf.GraphType):
+    if isinstance(i, cf.GraphTypes):
         i = [i]
-    if isinstance(o, cf.GraphType):
+    if isinstance(o, cf.GraphTypes):
         o = [o]
     if ( not isinstance(i, collections.Iterable)
          or isinstance(i, str) ):

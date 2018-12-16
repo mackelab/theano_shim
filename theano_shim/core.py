@@ -397,7 +397,7 @@ def _expand_args(arglst):
 
 def is_graph_object(*obj):
     # return 'theano' in sys.modules and any(isinstance(o, _gettheano().gof.Variable)
-    return 'theano' in sys.modules and any(isinstance(o, cf.GraphType)
+    return 'theano' in sys.modules and any(isinstance(o, cf.GraphTypes)
                                  for o in _expand_args(obj))
 is_theano_object = is_graph_object
 def is_constant(*obj):
@@ -412,7 +412,7 @@ def is_pure_symbolic(*var):
 is_theano_variable = is_pure_symbolic
 def is_symbolic(*var):
     return 'theano' in sys.modules and builtins.any(
-        isinstance(v, cf.GraphType)
+        isinstance(v, cf.GraphTypes)
         and not isinstance(v, cf.ConstantTypes)
         for v in _expand_args(var))
 def isshared(*var):
@@ -992,9 +992,11 @@ cf.add_terminating_types([ShimmedShared])
 def shared(value, name=None, strict=False, allow_downcast=None, symbolic=True,
            **kwargs):
     """
-    In contrast to Theano's `shared()`, the broadcast pattern is set to be compatible
-    with NumPy's behaviour; i.e., any axis in `value` with dimension 1 is considered
-    broadcastable.
+    In contrast to Theano's `shared()`, the broadcast pattern is set to be
+    compatible with NumPy's behaviour; i.e., any axis in `value` with dimension
+    1 is considered broadcastable by default.
+    As with Theano's `shared()`, broadcast pattern can by changed by passing
+    the :param:broadcastable keyword argument.
     """
     if not isinstance(value, np.ndarray):
         value = np.asarray(value)
