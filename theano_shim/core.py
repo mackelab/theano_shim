@@ -855,6 +855,9 @@ def scan(fn, sequences=None, outputs_info=None, non_sequences=None, n_steps=None
 
 class ShimmedRandomStreams:
     def __init__(self, seed=None):
+        self.seed(seed)
+
+    def seed(self, seed=None):
         np.random.seed(seed)
 
     def normal(self, size=(), avg=0.0, std=1.0, ndim=None):
