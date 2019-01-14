@@ -33,7 +33,7 @@ def clone(output, replace=None, *args, **kwargs):
     """
     if not core.is_theano_object(output):
         raise ValueError("`shim.graph.clone()` is undefined for non-symbolic outputs")
-    return core.theano.clone(output, replace, *args, **kwargs)
+    return core.gettheano().clone(output, replace, *args, **kwargs)
 
 #####################
 # Graph compilation
