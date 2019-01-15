@@ -1291,6 +1291,24 @@ def lfilter(size, b, a, x, *args, **kwargs):
 load(load_theano=False)
     # By default, don't load Theano
 
+#####################
+# Gradients
+
+def grad(expr, wrt, *args, **kwargs):
+    if not isinstance(wrt, (list, tuple)):
+        wrt = [wrt]
+    if not all(is_symbolic(w) for w in wrt):
+        raise TypeError("Gradient must be with respect to symbolic variables.")
+    if not is_symbolic(expr):
+        raise TypeError("Expression must be symbolic.")
+    # elif not set(wrt).issubset(shim.symbolic_inputs(expr)):
+    #     raise TypeError("Attempted to take gradient with respect to the "
+    #                     "following values, which are not part of the "
+    #                     "computational graph: {}"
+    #                     .format(', '.join(v.name for v in set(wrt).difference(
+    #                         shim.symbolic_inputs(expr)))))
+    return getT().grad(expr, wrt, *args, **kwargs)
+
 #######################
 # NumPy functions
 
