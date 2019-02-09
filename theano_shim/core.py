@@ -1,5 +1,5 @@
 """
-A simple convenient exchangeable interface, so we don't need
+A unified interface for Numpy and Theano, so we don't need
 conditionals just to select between e.g. T.sum and np.sum.
 More specific calls can be dealt with in the related code by
 conditioning on this module's `use_theano` flag
@@ -99,7 +99,9 @@ def load(load_theano=True, reraise=False):
         cf.add_terminating_types((T.TensorType, T.TensorVariable))
 
         cf.inf = 1e12
-        cf.RandomStreams = theano.tensor.shared_randomstreams.RandomStreams
+        # cf.RandomStreams = theano.tensor.shared_randomstreams.RandomStreams
+        cf.RandomStreams = \
+            make_TheanoRNG(theano.tensor.shared_randomstreams.RandomStreams)
 
         # if cf.sys.version_info.minor >= 5:
         #     cf.Numeric = cf.Union[np.ndarray, T.TensorVariable]
@@ -107,7 +109,7 @@ def load(load_theano=True, reraise=False):
     else:
         cf.lib = np
         cf.inf = np.inf
-        cf.RandomStreams = ShimmedRandomStreams
+        cf.RandomStreams = NumpyRNG
 
         # if cf.sys.version_info.minor >= 5:
         #     cf.Numeric = cf.Union[np.ndarray]
@@ -853,21 +855,48 @@ def scan(fn, sequences=None, outputs_info=None, non_sequences=None, n_steps=None
 #####################
 # Random number generation
 
-class ShimmedRandomStreams:
+class NumpyRNG:
     def __init__(self, seed=None):
         self.seed(seed)
 
     def seed(self, seed=None):
         np.random.seed(seed)
 
-    def normal(self, size=(), avg=0.0, std=1.0, ndim=None):
+    def normal(self, size=(), avg=0.0, std=1.0, ndim=None, name=None):
         return np.random.normal(loc=avg, scale=std, size=size)
 
-    def uniform(self, size=(), low=0.0, high=1.0, ndim=None):
+    def uniform(self, size=(), low=0.0, high=1.0, ndim=None, name=None):
         return np.random.uniform(low, high, size)
 
-    def binomial(self, size=(), n=1, p=0.5, ndim=None):
+    def binomial(self, size=(), n=1, p=0.5, ndim=None, name=None):
         return np.random.binomial(n, p, size)
+
+def make_TheanoRNG(rng_class):
+    def add_kwarg_name(f):
+        def wrapper(self, *args, **kwargs):
+            name = kwargs.pop('name', None)
+            sf = getattr(super(type(self), self), f.__name__)
+            rndstream = sf(*args, **kwargs)
+            if name is not None: rndstream.name = name
+            return rndstream
+        return wrapper
+
+    class TheanoRNG(rng_class):
+        """
+        Wraps Theano RNG to allow for passing `name` as keyword argument when
+        instantiating a random stream.
+        """
+
+        @add_kwarg_name
+        def normal(self, size=(), avg=0.0, std=1.0, ndim=None, name=None):
+            pass
+        @add_kwarg_name
+        def uniform(self, size=(), low=0.0, high=1.0, ndim=None, name=None):
+            pass
+        @add_kwarg_name
+        def binomial(self, size=(), n=1, p=0.5, ndim=None, name=None):
+            pass
+    return TheanoRNG
 
 def copy_random_state(from_rng, to_rng):
     """
