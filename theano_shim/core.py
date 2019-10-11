@@ -53,6 +53,16 @@ logger = logging.getLogger('theano_shim')
 def load_theano():
     load(True)
 
+class DummyT:
+    def __getattr__(self, attr):
+        global T
+        if not cf.use_theano:
+            raise RuntimeError("Tried to access theano.tensor, but Theano has not been loaded.")
+        else:
+            assert not isinstance(T, DummyT)
+            return getattr(T, attr)
+T = DummyT()
+
 def load(load_theano=True, reraise=False):
     """Reset the module to use or not use Theano.
     This should be called once at the top of your code.
@@ -457,6 +467,8 @@ def cast(x, dtype, same_kind=True):
         dtype = str(dtype)
     elif inspect.isclass(dtype) and issubclass(dtype, np.generic):
         dtype = str(dtype(1).dtype)  # FIXME Can we make this less ugly ?
+    elif dtype == 'floatX':
+        dtype = cf.floatX
 
     if same_kind:
         # Test that arguments are of the same kind
@@ -468,10 +480,12 @@ def cast(x, dtype, same_kind=True):
                             "If you want to disable this check, pass "
                             "`same_kind=False` to `cast()`"
                             .format(asarray(x).dtype, dtype))
-    if str(asarray(x).dtype) == dtype:
-        # Already the right dtype; no conversion to make
-        return x
-    elif is_theano_object(x):
+    # FIXME: Why did I need this test ? If I have a plain Python variable,
+    #        I *should* cast to a numpy dtype.
+    # if str(asarray(x).dtype) == dtype:
+    #     # Already the right dtype; no conversion to make
+    #     return x
+    if is_theano_object(x):
         return T.cast(x, dtype)
     elif hasattr(x, 'astype'):
         return x.astype(dtype)
@@ -933,6 +947,19 @@ def shape_to_broadcast(shape):
     return tuple(n==1 for n in shape)
 
 def tensor(object, name=None, dtype=None):
+    """
+    Make an object into a tensor. If `object` is a numpy array, a new tensor
+    matching its shape and dtype is returned. The array values are ignored.
+
+    Examples:
+    >>> import numpy as np
+    >>> import theano_shim as shim
+    >>> a = np.arange(5)
+    >>> x = shim.tensor(a)
+    >>> x2 = shim.tensor(a, name='a')
+    >>> y = shim.tensor((5,), dtype='float64')
+    >>> z = shim.tensor((5,3), name='z', dtype='int32')
+    """
     broadcastable = None
     if isinstance(object, tuple):
         shape = object
@@ -942,6 +969,9 @@ def tensor(object, name=None, dtype=None):
     elif hasattr(object, 'broadcastable'):
         if dtype is None: dtype = object.dtype
         broadcastable = object.broadcastable
+    if dtype is None:
+        raise TypeError(
+            "You must specify `dtype` if `object` does not provide one.")
     if not cf.use_theano:
         # If `shape` is undefined at this point, we gave a wrong argument
         return np.array(shape, dtype=dtype)
