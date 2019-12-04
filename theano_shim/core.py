@@ -473,7 +473,8 @@ def cast(x, dtype, same_kind=True):
     if same_kind:
         # Test that arguments are of the same kind
         # We get kind by stripping number from dtype's string
-        kind_x = ''.join(c for c in str(asarray(x).dtype) if c.isalpha())
+        dtype_x = x.dtype if hasattr(x, 'dtype') else asarray(x).dtype
+        kind_x = ''.join(c for c in str(dtype_x) if c.isalpha())
         kind_dtype = ''.join(c for c in str(dtype) if c.isalpha())
         if kind_x != kind_dtype:
             raise TypeError("Unsafe cast: trying to convert a {} to a {}. "
@@ -949,7 +950,10 @@ def shape_to_broadcast(shape):
 def tensor(object, name=None, dtype=None):
     """
     Make an object into a tensor. If `object` is a numpy array, a new tensor
-    matching its shape and dtype is returned. The array values are ignored.
+    matching its shape and dtype is returned. The array values are used to set
+    the test value.
+
+    Not implemented: creating tensors from scalar objects.
 
     Examples:
     >>> import numpy as np
@@ -960,6 +964,7 @@ def tensor(object, name=None, dtype=None):
     >>> y = shim.tensor((5,), dtype='float64')
     >>> z = shim.tensor((5,3), name='z', dtype='int32')
     """
+    # Infer the tensor shape
     broadcastable = None
     if isinstance(object, tuple):
         shape = object
@@ -969,6 +974,11 @@ def tensor(object, name=None, dtype=None):
     elif hasattr(object, 'broadcastable'):
         if dtype is None: dtype = object.dtype
         broadcastable = object.broadcastable
+    # Try to infer a test value
+    if isinstance(object, np.ndarray):
+        test_value = object
+    else:
+        test_value = None
     if dtype is None:
         raise TypeError(
             "You must specify `dtype` if `object` does not provide one.")
@@ -977,7 +987,10 @@ def tensor(object, name=None, dtype=None):
         return np.array(shape, dtype=dtype)
     else:
         if broadcastable is None: broadcastable = shape_to_broadcast(shape)
-        return getT().tensor(dtype, broadcastable, name=name)
+        tensor = getT().tensor(dtype, broadcastable, name=name)
+        if test_value is not None:
+            tensor.tag.test_value = test_value
+        return tensor
 
 ######################
 # Shared variable constructor
