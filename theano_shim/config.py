@@ -2,6 +2,7 @@
 Global configuration variables
 """
 import sys
+from warnings import warn
 from numbers import Number
 # Make it safe to assume Python 3 when testing version
 if sys.version_info.major < 3:
@@ -146,5 +147,20 @@ class Config:
             # Make NumPy constants 32-bit so they don't trigger
             # upcasts when used in expressions
             self.make_constants_32bit()
+
+    @property
+    def compute_test_value(self):
+        if 'theano' in sys.modules:
+            return _gettheano().config.copmute_test_value
+        else:
+            return "Theano is not loaded"
+
+    @compute_test_value.setter
+    def compute_test_value(self, flag):
+        if 'theano' in sys.modules:
+            _gettheano().config.compute_test_value = flag
+        else:
+            warn("Setting `compute_test_value` has no effect when Theano "
+                 "is not loaded.")
 
 config = Config()
