@@ -3,7 +3,7 @@ Shimmed Graph utilities:
    graph compilation, traversal, listing inputs...
 """
 import collections
-from collections import Iterable
+from collections.abc import Iterable
 import itertools
 import builtins
 from . import core

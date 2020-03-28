@@ -374,7 +374,7 @@ def _expand_args(arglst):
     Recursively expand slices, iterables, dictionaries into a list of scalar data type.
     Scalars are returned as a 1 element list.
     """
-    if not isinstance(arglst, collections.Iterable):
+    if not isinstance(arglst, collections.abc.Iterable):
         arglst = [arglst]
     elif ('theano' in sys.modules
           and isinstance(arglst, _gettheano().gof.Variable)):
