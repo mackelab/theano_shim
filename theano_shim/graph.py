@@ -164,7 +164,8 @@ def is_computable(varlist, with_inputs=None):
     If varlist is not a Theano graph, it is always computable.
     """
     if ( not isinstance(varlist, collections.Iterable)
-         or isinstance(varlist, str) ):
+         or isinstance(varlist, str)
+         or isinstance(varlist, cf.GraphTypes)):
         raise ValueError("theano_shim.is_computable requires a list as first argument.")
     if with_inputs is None:
         with_inputs = []
@@ -202,7 +203,7 @@ def symbolic_inputs(varlist, *args, **kwargs):
 
 def shared_inputs(varlist, *args, **kwargs):
     return [v for v in inputs(varlist, *args, **kwargs)
-              if isinstance(v, cf.SharedType)]
+              if isinstance(v, cf.SymbolicSharedType)]
 
 def pure_symbolic_inputs(varlist, *args, **kwargs):
     return [v for v in inputs(varlist, *args, **kwargs) if core.is_pure_symbolic(v)]

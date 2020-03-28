@@ -47,6 +47,7 @@ class Config:
     use_theano = False
     inf = None
     _floatX = 'float64'  # Use this if Theano is not loaded
+    _shared_types = ()  # core appends `ShimmedShared` to this
 
     # Unified support for type hints; supported in Python >=3.5
     if sys.version_info.minor >= 5:
@@ -90,22 +91,41 @@ class Config:
     @property
     def SymbolicType(self):
         # FIXME: What about ScalarVariable ? SharedVariable ?
-        return _getT().TensorVariable
+        if 'theano' not in sys.modules: return ()
+        else: return _getT().TensorVariable
     @property
     def GraphTypes(self):
-        return (_gettheano().gof.Variable, self.RandomStreamType)
+        if 'theano' not in sys.modules: return ()
+        else: return (_gettheano().gof.Variable, self.RandomStreamType)
+    @property
+    def ShimmedAndGraphTypes(self):
+        return self.SharedTypes + self.GraphTypes
     @property
     def ConstantType(self):
-        return _gettheano().gof.Constant
+        if 'theano' not in sys.modules: return ()
+        else: return _gettheano().gof.Constant
     @property
     def TensorConstantType(self):
-        return _getT().TensorConstant
+        if 'theano' not in sys.modules: return ()
+        else: return _getT().TensorConstant
     @property
     def ScalarConstantType(self):
-        return _gettheano().scalar.ScalarConstant
+        if 'theano' not in sys.modules: return ()
+        else: return _gettheano().scalar.ScalarConstant
     @property
-    def SharedType(self):
-        return _getT().sharedvar.SharedVariable
+    def SymbolicSharedType(self):
+        if 'theano' not in sys.modules: return ()
+        else: return _getT().sharedvar.SharedVariable
+    @property
+    def SharedTypes(self):
+        """Return a tuple containing all *loaded* shared types.
+        ShimmedShared is always included, and if theano is loaded, so is
+        SymbolicSharedType.
+        """
+        if 'theano' in sys.modules:
+            return self._shared_types + (self.SymbolicSharedType,)
+        else:
+            return self._shared_types
     @property
     def ConstantTypes(self):
         if 'theano' in sys.modules:
@@ -115,13 +135,16 @@ class Config:
             return (Number,)
     @property
     def RandomStreamType(self):
-        return _getT().shared_randomstreams.RandomStreams
+        if 'theano' not in sys.modules: return ()
+        else: return _getT().shared_randomstreams.RandomStreams
     @property
     def RandomStateType(self):
-        return _getT().shared_randomstreams.RandomStateSharedVariable
+        if 'theano' not in sys.modules: return ()
+        else: return _getT().shared_randomstreams.RandomStateSharedVariable
     @property
     def CompiledType(self):
-        return _gettheano().compile.function_module.Function
+        if 'theano' not in sys.modules: return ()
+        else: return _gettheano().compile.function_module.Function
 
     @property
     def floatX(self):

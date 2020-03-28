@@ -427,9 +427,11 @@ def is_symbolic(*var):
         isinstance(v, cf.GraphTypes)
         and not isinstance(v, cf.ConstantTypes)
         for v in _expand_args(var))
+def is_shimmed_or_symbolic(*var):
+    return any(isinstance(v, cf.ShimmedAndGraphTypes) for v in _expand_args(var))
 def isshared(*var):
     if 'theano' in sys.modules:
-        return any(isinstance(v, (cf.SharedType, ShimmedShared))
+        return any(isinstance(v, (cf.SymbolicSharedType, ShimmedShared))
                    for v in _expand_args(var))
     else:
         return any(isinstance(v, ShimmedShared)
@@ -437,6 +439,8 @@ def isshared(*var):
 
 #######################
 # Casting functions
+
+
 def cast(x, dtype, same_kind=True):
     """
     Parameters
@@ -491,42 +495,7 @@ def cast(x, dtype, same_kind=True):
     elif hasattr(x, 'astype'):
         return x.astype(dtype)
     else:
-        val = ( np.int8(x, keepdims=True) if dtype == 'int8'
-                else np.int16(x, keepdims=True) if dtype == 'int16'
-                else np.int32(x, keepdims=True) if dtype == 'int32'
-                else np.int64(x, keepdims=True) if dtype == 'int64'
-                else np.uint8(x, keepdims=True) if dtype == 'uint8'
-                else np.uint16(x, keepdims=True) if dtype == 'uint16'
-                else np.uint32(x, keepdims=True) if dtype == 'uint32'
-                else np.uint64(x, keepdims=True) if dtype == 'uint64'
-                else np.float16(x, keepdims=True) if dtype == 'float16'
-                else np.float32(x, keepdims=True) if dtype == 'float32'
-                else np.float64(x, keepdims=True) if dtype == 'float64'
-                else None )
-        if val is None:
-            raise ValueError("Unrecognized type {}.".format(dtype))
-        return val
-
-# def cast_int8(x):
-#     if is_theano_object(x):
-#         return T.cast(x, 'int8')
-#     else:
-#         return np.int8(x)
-# def cast_int16(x):
-#     if is_theano_object(x):
-#         return T.cast(x, 'int16')
-#     else:
-#         return np.int16(x)
-# def cast_int32(x):
-#     if is_theano_object(x):
-#         return T.cast(x, 'int32')
-#     else:
-#         return np.int32(x)
-# def cast_int64(x):
-#     if is_theano_object(x):
-#         return T.cast(x, 'int64')
-#     else:
-#         return np.int64(x)
+        return np.dtype(dtype).type(x, keepdims=True)
 
 def cast_floatX(x, same_kind=True):
     return cast(x, dtype=cf.floatX, same_kind=same_kind)
@@ -1063,6 +1032,7 @@ class ShimmedShared(np.ndarray):
         return tuple(s==1 for s in self.shape)
 
 cf.add_terminating_types([ShimmedShared])
+cf._shared_types += (ShimmedShared,)
 
 def shared(value, name=None, strict=False, allow_downcast=None, symbolic=True,
            **kwargs):
@@ -1458,16 +1428,21 @@ def log10(x):
         return T.log10(x)
     else:
         return np.log10(x)
-def min(x):
-    if is_theano_object(x):
-        return T.min(x)
-    else:
-        return np.min(x)
 def max(x):
     if is_theano_object(x):
         return T.max(x)
     else:
         return np.max(x)
+def min(x):
+    if is_theano_object(x):
+        return T.min(x)
+    else:
+        return np.min(x)
+def multiply(x, y):
+    if is_theano_object(x, y):
+        return x*y
+    else:
+        return np.multiply(x, y)
 def ones(shape, dtype=None):
     if is_theano_object(shape):
         return T.ones(shape, dtype)
