@@ -34,6 +34,7 @@ Pointers for writing theano switches
 import logging
 import builtins
 import collections
+from numbers import Number
 import inspect
 import sys
 import numpy as np
@@ -948,6 +949,12 @@ def tensor(object, name=None, dtype=None):
         test_value = object
     else:
         test_value = None
+    # Scalar inputs become 0-dim arrays
+    if isinstance(object, Number):
+        shape = ()
+        test_value = object
+        dtype = str(np.dtype(type(object)))
+        broadcastable = ()
     if dtype is None:
         raise TypeError(
             "You must specify `dtype` if `object` does not provide one.")
