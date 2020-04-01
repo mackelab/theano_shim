@@ -86,13 +86,13 @@ def load(load_theano=True, reraise=False):
             import theano
         except ImportError:
             logger.error("The theano library was not found.")
-            cf.use_theano = False
+            cf.library = 'numpy'
             if reraise:
                 raise
         else:
-            cf.use_theano = True
+            cf.library = 'theano'
     else:
-        cf.use_theano = False
+        cf.library = 'numpy'
 
     if cf.floatX == 'float32':
         config.make_constants_32bit()
@@ -100,7 +100,6 @@ def load(load_theano=True, reraise=False):
     if cf.use_theano:
         import theano.ifelse
         import theano.tensor as T
-        cf.lib = T
         import theano.tensor.signal.conv
         import theano.sparse
         import theano.tensor.shared_randomstreams  # CPU only
@@ -118,7 +117,6 @@ def load(load_theano=True, reraise=False):
         #     cf.Numeric = cf.Union[np.ndarray, T.TensorVariable]
 
     else:
-        cf.lib = np
         cf.inf = np.inf
         cf.RandomStreams = NumpyRNG
 
@@ -440,7 +438,6 @@ def isshared(*var):
 
 #######################
 # Casting functions
-
 
 def cast(x, dtype, same_kind=True):
     """

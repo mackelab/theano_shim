@@ -9,8 +9,7 @@ if sys.version_info.major < 3:
     raise RuntimeError("theano_shim requires Python 3. You are using {}."
                        .format(sys.version))
 from collections import OrderedDict
-if sys.version_info.minor >= 5:
-    from typing import Union
+from typing import Union
 import numpy as np
 
 # These forms will retrieve theano or theano.tensor, whether or not cf.use_theano == True,
@@ -42,22 +41,75 @@ def make_32bit_var(module, var):
     # Overwrite with 32bit value
     setattr(module, var, np.float32(value))
 
-class Config:
-    # TODO: Make singleton
-    use_theano = False
+# Singleton class copied from mackelab_toolbox.utils
+class Singleton(type):
+    """Singleton metaclass
+
+    Although singletons are usually an anti-pattern, I've found them useful in
+    a few cases, notably for a configuration class storing dynamic attributes
+    in the form of properties.
+
+    Example
+    -------
+    >>> from mackelab_toolbox.utils import Singleton
+    >>> import sys
+    >>>
+    >>> class Config(metaclass=Singleton):
+    >>>     def num_modules(self):
+    >>>         return len(sys.modules)
+    """
+    __instance = None
+    def __new__(metacls, name, bases, dct):
+        cls = super().__new__(metacls, name, bases, dct)
+        cls.__instance = None
+        cls.__new__ = metacls.__clsnew__
+        return cls
+    @staticmethod
+    def __clsnew__(cls, *args, **kwargs):
+        # ensure that only one instance exists
+        if not cls.__instance:
+            cls.__instance = super(cls, cls).__new__(cls,*args,**kwargs)
+        return cls.__instance
+
+class Config(metaclass=Singleton):
     inf = None
+    _library = 'numpy'  # Currently can only be set to 'numpy' or 'theano'
+    _library_values = ('numpy', 'theano')
     _floatX = 'float64'  # Use this if Theano is not loaded
     _shared_types = ()  # core appends `ShimmedShared` to this
 
-    # Unified support for type hints; supported in Python >=3.5
-    if sys.version_info.minor >= 5:
-        @property
-        def Numeric(self):
-            if self.use_theano:
-                return Union[np.ndarray, T.TensorVariable]
-            else:
-                return Union[np.ndarray]
+    @property
+    def library(self):
+        return self._library
+    @library.setter
+    def library(self, value):
+        if value not in self._library_values:
+            libnames = ', '.join(f"'{l}'" for l in self._library_values)
+            raise ValueError("`library` attribute can only be set to one of "
+                             f"{libnames}.")
+        self._library = value
+        return value
 
+    # For backwards compatibility
+    @property
+    def use_theano(self):
+        return self.library == 'theano'
+    @use_theano.setter
+    def use_theano(self, value):
+        assert isinstance(value, bool)
+        warn("Set `shim.config.library` instead of `shim.config.use_theano`.")
+        if value:
+            self.library = 'theano'
+        else:
+            self.library = 'numpy'
+
+    # @property
+    # def Numeric(self):
+    #     if self.use_theano:
+    #         return Union[np.ndarray, T.TensorVariable]
+    #     else:
+    #         return Union[np.ndarray]
+    #
     theano_updates = OrderedDict()
         # Stores a Theano update dictionary
 
