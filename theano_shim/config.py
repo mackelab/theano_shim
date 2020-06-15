@@ -76,7 +76,7 @@ class Config(metaclass=Singleton):
     _library = 'numpy'  # Currently can only be set to 'numpy' or 'theano'
     _library_values = ('numpy', 'theano')
     _floatX = 'float64'  # Use this if Theano is not loaded
-    _shared_types = ()  # core appends `ShimmedShared` to this
+    _shared_types = ()  # core appends `ShimmedTensorShared` to this
 
     @property
     def library(self):
@@ -110,11 +110,9 @@ class Config(metaclass=Singleton):
     #     else:
     #         return Union[np.ndarray]
     #
-    theano_updates = OrderedDict()
+    symbolic_updates = OrderedDict()
         # Stores a Theano update dictionary
 
-    lib = None
-        # DEPRECATION WARNING: lib will soon be removed
     RandomStreams = None
 
     # TerminatingTypes is a tuple of all types which may be iterable but
@@ -142,36 +140,97 @@ class Config(metaclass=Singleton):
 
     @property
     def SymbolicType(self):
-        # FIXME: What about ScalarVariable ? SharedVariable ?
+        """
+        Matches:
+            Tensor variables
+            Expressions
+            Shared variables
+            Tensor constants
+        Does not match:
+            Random variables
+        """
         if 'theano' not in sys.modules: return ()
-        else: return _getT().TensorVariable
+        else: return _gettheano().gof.graph.Variable
+    # For Theano, the expression type is just the generic symbolic type
+    SymbolicExpressionType = SymbolicType
     @property
     def GraphTypes(self):
+        """
+        Matches any node in a computational graph:
+            Tensor variables
+            Expressions
+            Shared variables
+            Tensor constants
+            Random variables
+        """
         if 'theano' not in sys.modules: return ()
-        else: return (_gettheano().gof.Variable, self.RandomStreamType)
+        else: return (self.SymbolicType, self.SymbolicRNGType)
     @property
     def ShimmedAndGraphTypes(self):
+        """
+        Matches any node in a computational graph:
+            Tensor variables
+            Expressions
+            Shared variables
+            Tensor constants
+            Random variables
+        + ShimmedShared variables
+        """
         return self.SharedTypes + self.GraphTypes
     @property
-    def ConstantType(self):
+    def PureSymbolicType(self):
+        """
+        Matches:
+            Tensor variables
+            Expressions
+        Does not match:
+            Shared variables
+            Tensor constants
+            Random variables
+
+        .. Note: This does not correspond to Theano's `TensorType`. For that
+           see `~config.Config.TensorDescType`.
+        """
+        if 'theano' not in sys.modules: return ()
+        else: return _getT().TensorVariable
+    TensorType = PureSymbolicType
+    @property
+    def SymbolicConstantType(self):
+        """
+        Matches:
+            Tensor constants
+        """
         if 'theano' not in sys.modules: return ()
         else: return _gettheano().gof.Constant
-    @property
-    def TensorConstantType(self):
-        if 'theano' not in sys.modules: return ()
-        else: return _getT().TensorConstant
-    @property
-    def ScalarConstantType(self):
-        if 'theano' not in sys.modules: return ()
-        else: return _gettheano().scalar.ScalarConstant
+    # @property
+    # def TensorConstantType(self):
+    #   """
+    #   The difference between Constant and TensorConstant, is that
+    #   TensorConstant adds the py_operators mixin, which define tensor
+    #   operations.
+    #   => I think this is a distinction best hidden from the interface.
+    #   """
+    #     if 'theano' not in sys.modules: return ()
+    #     else: return _getT().TensorConstant
+    # @property
+    # def ScalarConstantType(self):
+    #   """
+    #   Same as above: best not to make distinction with ScalarConstants in
+    #   interface. Even shim.asvariable(0) doesn't match.
+    #   """
+    #     if 'theano' not in sys.modules: return ()
+    #     else: return _gettheano().scalar.ScalarConstant
     @property
     def SymbolicSharedType(self):
+        """
+        Matches only symbolic (not shimmed) shared variables.
+        """
         if 'theano' not in sys.modules: return ()
         else: return _getT().sharedvar.SharedVariable
     @property
     def SharedTypes(self):
         """Return a tuple containing all *loaded* shared types.
-        ShimmedShared is always included, and if theano is loaded, so is
+        ShimmedTensorShared is always included, and if theano is loaded, so is
         SymbolicSharedType.
         """
         if 'theano' in sys.modules:
@@ -180,15 +239,25 @@ class Config(metaclass=Singleton):
             return self._shared_types
     @property
     def ConstantTypes(self):
+        """
+        Matches both symbolic and literal constants. Specifically, returns
+        ``(config.SymbolicConstantType, Number)``
+        """
         if 'theano' in sys.modules:
-            return (self.ConstantType, self.ScalarConstantType,
-                    self.TensorConstantType, Number)
+            return (self.SymbolicConstantType, Number)
         else:
             return (Number,)
     @property
-    def RandomStreamType(self):
+    def SymbolicRNGType(self):
         if 'theano' not in sys.modules: return ()
         else: return _getT().shared_randomstreams.RandomStreams
+    @property
+    def RNGTypes(self):
+        if 'theano' in sys.modules:
+            return (_getT().shared_randomstreams.RandomStreams,
+                    np.random.Generator, np.random.RandomState)
+        else:
+            return (np.random.Generator, np.random.RandomState)
     @property
     def RandomStateType(self):
         if 'theano' not in sys.modules: return ()
@@ -197,6 +266,15 @@ class Config(metaclass=Singleton):
     def CompiledType(self):
         if 'theano' not in sys.modules: return ()
         else: return _gettheano().compile.function_module.Function
+    @property
+    def TensorDescType(self):
+        """
+        An object, which stores the information necessary to create a tensor.
+        In Theano, this is the `TensorType`, which stores the dtype and
+        broadcast pattern.
+        """
+        if 'theano' not in sys.modules: return ()
+        else: return _getT().TensorType
 
     @property
     def floatX(self):

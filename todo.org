@@ -1,6 +1,9 @@
-* TODO Combine shim.eval() and shim.graph.eval()
+* DONE Combine shim.eval() and shim.graph.eval()
+  CLOSED: [2020-05-01T22:13:46--2:00]
 * TODO Split random number functionality to its own module
-* TODO Scan wrapper
+* DONE Scan wrapper
+* TODO Support taps in scan wrapper
+* TODO Scan wrapper numpy path should recognize more args
 * TODO theano.function wrapper
 * TODO ShimmedSymbolic ? Could be used as input in shim.function
 * DONE Make shim.sparse optional load.

@@ -23,6 +23,21 @@ def load_exceptions():
     else:
         MissingInputError = _MissingInputError
 
+def reload():
+    """Reload definitions according to cf.library."""
+    # Add here any object who's definition changes depending on library
+    global GraphExpression, GraphExpressionMeta
+
+    if cf.library == 'numpy':
+        GraphExpression = ShimmedGraphExpression
+        GraphExpressionMeta = type
+    elif cf.library == 'theano':
+        GraphExpression = get_TheanoGraphExpression()
+        GraphExpressionMeta = core.gettheano().gof.utils.MetaObject
+    else:
+        assert False
+
+
 ######################
 # Graph manipulation
 
@@ -34,6 +49,64 @@ def clone(output, replace=None, *args, **kwargs):
     if not core.is_theano_object(output):
         raise ValueError("`shim.graph.clone()` is undefined for non-symbolic outputs")
     return core.gettheano().clone(output, replace, *args, **kwargs)
+
+class ShimmedGraphExpression:
+    pass
+
+# Wrapping in a function prevents defining the class before theano is loaded
+def get_TheanoGraphExpression():
+    if get_TheanoGraphExpression.TGE is None:
+        theano = core.gettheano()
+        class TheanoGraphExpression(theano.gof.graph.Variable,
+                                    theano.tensor._tensor_py_operators):
+            """
+            Mixin class to create a node a an computational graph representing
+            a variable or expression. (As opposed to an operation.)
+
+            The initialization signature matches that of a graph node, allowing
+            internal graph functions such as `copy()` to work.
+            When mixing into another class, make sure this initialization signature
+            remains valid (reminder: multiple inheritance precedence goes left to right).
+
+            In addition to the default initialization,
+            """
+            def __init__(self, expr_or_type, owner=None, index=None, name=None):
+                if isinstance(expr_or_type, cf.SymbolicExpressionType):
+                    # We actually just passed an expression
+                    # Add a dummy entry to the graph, so we don't invalidate an
+                    # existing variable
+                    expr = expr_or_type.copy()
+                        # .copy() creates a new node with for the 'identity'
+                        # operation and `expr_or_type` as only input.
+                        # This allows us to modify `expr` without
+                        # invalidating the variable that was passed as argument.
+                    type = expr.type
+                    owner = expr.owner
+                    index = expr.index
+                    if name is None:
+                        name = expr.name
+                    # Point the parent graph to the new graph node
+                    if owner is not None:
+                        owner.outputs = [self if o is expr else o
+                                         for o in owner.outputs]
+                else:
+                    type = expr_or_type
+                super().__init__(type, owner, index, name)
+        get_TheanoGraphExpression.TGE = TheanoGraphExpression
+    return get_TheanoGraphExpression.TGE
+get_TheanoGraphExpression.TGE = None
+
+def replace_expr(expr):
+    type = expr.type
+    owner = expr.owner
+    index = expr.index
+    if name is None:
+        name = expr.name
+    # Point the parent graph to the new graph node
+    owner.outputs = [self if o is expr else o for o in owner.outputs]
+    return GraphExpression(type, owner, index, name)
+
+
 
 #####################
 # Graph compilation
@@ -48,7 +121,7 @@ def compile(inputs, outputs, *args, **kwargs):
         raise ValueError("`shim.graph.function()` is undefined for non-symbolic outputs")
     return core.theano.function(inputs, outputs, *args, **kwargs)
 
-def eval(expr, givens=None, max_cost=10, if_too_costly='raise', inputs=None):
+def eval(expr, givens=None, max_cost=10, if_too_costly='raise'):
     """
     Obtain a numerical value by evaluating an expression's graph.
 
@@ -58,6 +131,30 @@ def eval(expr, givens=None, max_cost=10, if_too_costly='raise', inputs=None):
     to replace symbolic and shared variables during compilation.
 
     If it's not a symbolic expression at all, `expr` is simply returned.
+
+    .. Hint:: Graph compilations can quickly become time-consuming, and one
+       should avoid using `eval` too liberally, as the compilation times can
+       add up.
+
+       The default value of ``10`` is meant for negligible cost evaluations
+       – things like retrieving a shared value, or evaluating an arithmetic
+       expression involving constants. Thus calling `eval` without extra
+       arguments amounts to a cheap "remove the symbolic container" call and
+       can be done whenever needed.
+
+       For sanity checks, it probably doesn't make sense to spend too much
+       time computing a graph that will never be used in an actual computation.
+       The best approach is usually to keep `max_cost` low (30 may be a
+       reasonable value) and silence the ``TooCostly`` exception::
+
+           try:
+               shim.eval(my_test, max_cost=30)
+           except shim.graph.TooCostly:
+               pass
+
+       For code which should always be executed, one can either estimate
+       the expected ``max_cost``, or set it to ``None`` to disable cost
+       checking entirely.
 
     Parameters
     ----------
@@ -78,8 +175,6 @@ def eval(expr, givens=None, max_cost=10, if_too_costly='raise', inputs=None):
         What to do if an expression is too costly to compute.
         'ignore': do nothing, return symbolic expression.
         'raise' : raise a TooCostly exception.
-    inputs: Deprecated
-        Synonym for `givens`.
 
     Returns
     -------
@@ -88,13 +183,25 @@ def eval(expr, givens=None, max_cost=10, if_too_costly='raise', inputs=None):
     # Bypassing code paths
     if core.isshared(expr):
         return expr.get_value()
-    elif not core.is_theano_object(expr):
+    elif not core.is_graph_object(expr):
         return expr
     elif isinstance(expr, slice):
         return slice(eval(expr.start), eval(expr.stop), eval(expr.step))
+    # TODO: If iterable of shared vars, should just call `get_value()`
 
     # "Standard" code path
-    cost = len(core.gettheano().gof.graph.ancestors([expr]))
+    if isinstance(expr, Iterable) and not isinstance(expr, cf.TerminatingTypes):
+        assert all(isinstance(e, cf.TerminatingTypes) for e in expr)
+        expr = [core.asvariable(e) for e in expr]
+        expr_list = True
+    else:
+        expr = [expr]
+        expr_list = False
+    cost = len(core.gettheano().gof.graph.ancestors(expr)) / len(expr)
+       # We take the mean because if a user passes a list, they
+       # expect computation to scale with the number of terms
+    if not expr_list:
+        expr = expr[0]
     if max_cost is not None and cost > max_cost:
         if if_too_costly == 'raise':
             raise TooCostly("Expression has {} ancestors, which exceeds the "
@@ -102,9 +209,7 @@ def eval(expr, givens=None, max_cost=10, if_too_costly='raise', inputs=None):
         else:
             return expr
     else:
-        if inputs is None: inputs = {}  # TODO: Remove `inputs`
         if givens is None: givens = {}
-        givens = {**inputs, **givens}
         for k, v in givens.items():
             givens[k] = core.cast(v, k.dtype)
         f = core.gettheano().function(
@@ -114,8 +219,8 @@ def eval(expr, givens=None, max_cost=10, if_too_costly='raise', inputs=None):
 ######################
 # Graph inspection
 
-# _stablehash and _tobytes also in `mackelab.utils`
-def _stablehash(o):
+# _stablehexdigest and _tobytes also in `mackelab.utils`
+def _stablehexdigest(o):
     """
     Builtin `hash` is not stable across sessions for security reasons.
     """
@@ -151,9 +256,9 @@ def hash(graph):
 
     if (isinstance(graph, collections.Iterable)
         and not isinstance(graph, cf.TerminatingTypes)):
-        return _stablehash(tuple(hash(g) for g in graph))
+        return _stablehexdigest(tuple(hash(g) for g in graph))
     else:
-        return _stablehash(core.pprint(graph))
+        return _stablehexdigest(core.pprint(graph))
 
 def is_computable(varlist, with_inputs=None):
     """
@@ -162,11 +267,18 @@ def is_computable(varlist, with_inputs=None):
     graph associated to varlist is composed only of constants and shared variables,
     along with the symbolic variables in `with_inputs`.
     If varlist is not a Theano graph, it is always computable.
+
+    Parameters
+    ----------
+    varlist: expression | list of expressions
+        If `varlist` is anything else than an `list`, `tuple` or `set`, it is
+        wrapped with a list.
     """
-    if ( not isinstance(varlist, collections.Iterable)
-         or isinstance(varlist, str)
-         or isinstance(varlist, cf.GraphTypes)):
-        raise ValueError("theano_shim.is_computable requires a list as first argument.")
+    if not isinstance(varlist, (list, tuple, set)):
+         # or isinstance(varlist, cf.GraphTypes)):
+        # raise ValueError("theano_shim.graph.is_computable requires a list as first argument.")
+        # `is_computable` requires a list as first argument.
+        varlist = [varlist]
     if with_inputs is None:
         with_inputs = []
     computable = True
@@ -177,7 +289,8 @@ def is_computable(varlist, with_inputs=None):
                 computable = False
                 break
         elif core.is_theano_variable(var): # Required because varlist may contain non-Theano objects
-            if core.is_theano_variable( set(core.gettheano().gof.graph.inputs([var])).difference(with_inputs) ):
+            # if core.is_theano_variable( set(core.gettheano().gof.graph.inputs([var])).difference(with_inputs) ):
+            if core.is_theano_variable( set(pure_symbolic_inputs([var])).difference(with_inputs) ):
                 computable = False
                 break
     return computable

@@ -9,3 +9,6 @@ def load_theano():
 def load(load_theano=True, reraise=False):
     core.load(load_theano, reraise)
     graph.load_exceptions()
+
+# Common functions which are worth having in global namespace
+eval = graph.eval

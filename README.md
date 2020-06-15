@@ -37,7 +37,7 @@ to aid this task:
 - `is_theano_object` checks whether a variable is any Theano object 
    (including shared variables)
 - `isshared` checks whether a variable is a shared object (either a Theano
-   shared variable, or an instance `ShimmedShared` which this module provides).
+   shared variable, or an instance `ShimmedTensorShared` which this module provides).
    
 You can also test on `theano_shim.config.use_theano` to check whether Theano
 is loaded.

@@ -11,12 +11,12 @@ as 'shim' datatypes for random number streams and shared variables.
 Usage
 -----
 At the top of your code, include the line
-`import theano_shim as shim`
+``import theano_shim as shim``
 By default this will not even try to load Theano, so you can use it on
 a machine where Theano is not installed.
 To 'switch on' Theano, add the following below the import:
-`shim.load_theano()`
-You can switch it back to its default state with `shim.load(False)`.
+``shim.load('theano')``
+You can switch it back to its default state with ``shim.load('numpy')``.
 
 
 Pointers for writing theano switches
@@ -33,10 +33,13 @@ Pointers for writing theano switches
 
 import logging
 import builtins
-import collections
+from collections import OrderedDict
+from collections.abc import Sequence, Iterable
 from numbers import Number
 import inspect
 import sys
+import copy as copymodule
+
 import numpy as np
 import scipy as sp
 import scipy.signal
@@ -64,15 +67,16 @@ class DummyT:
             return getattr(T, attr)
 T = DummyT()
 
-def load(load_theano=True, reraise=False):
+def load(library='theano', reraise=False):
     """Reset the module to use or not use Theano.
     This should be called once at the top of your code.
 
     Parameters
     ----------
-    use_theano: Boolean
-        - True  : Module will act as an interface to Theano
-        - False : Module will simulate Theano using pure Numpy
+    library: 'numpy' | 'theano'
+        - 'numpy'   : Module will simulate Theano using pure Numpy.
+                      This is the state before calling `load()`.
+        - 'theano'  : Module will act as an interface to Theano
     reraise: Boolean
         If true, import errors will be reraised to allow them to propagate to the parent.
     """
@@ -81,7 +85,7 @@ def load(load_theano=True, reraise=False):
 
     global theano, T
 
-    if load_theano:
+    if library == 'theano':
         try:
             import theano
         except ImportError:
@@ -92,7 +96,7 @@ def load(load_theano=True, reraise=False):
         else:
             cf.library = 'theano'
     else:
-        cf.library = 'numpy'
+        cf.library = library  # Raises error if `library` is invalid
 
     if cf.floatX == 'float32':
         config.make_constants_32bit()
@@ -122,6 +126,10 @@ def load(load_theano=True, reraise=False):
 
         # if cf.sys.version_info.minor >= 5:
         #     cf.Numeric = cf.Union[np.ndarray]
+
+    # Call the `reload()` methods in the submodules
+    from . import graph
+    graph.reload()
 
 def gettheano():
     if not cf.use_theano:
@@ -165,7 +173,7 @@ class LazyEval:
 # (Moved to graph.py)
 
 def is_computable(varlist, with_inputs=None):
-    logger.warning("Deprecation warning: theano_shim.is_computable() is deprecated. "
+    logger.warning("Deprecation warning: theano_shim.graph.is_computable() is deprecated. "
                    "Use theano_shim.graph.is_computable(). This test has NOT been executed.")
 
 ##########################
@@ -185,22 +193,37 @@ def add_update(variable, value=None):
     if isinstance(variable, dict):
         for key, val in variable.items():
             add_update(key, val)
-    elif isinstance(variable, collections.Sequence):
+    elif isinstance(variable, Sequence):
         for key, val in variable:
             add_update(key, val)
     else:
         logger.debug("Adding Theano update : {} -> {}".format(variable.name, str(value)))
         if not isshared(variable):
             raise ValueError("The updates mechanism only applies to shared variables.")
-        cf.theano_updates[variable] = value
+        cf.symbolic_updates[variable] = value
 add_updates = add_update
 
 def get_updates():
-    return cf.theano_updates
+    return cf.symbolic_updates
 
 def reset_updates():
     logger.debug("Clearing Theano updates")
-    cf.theano_updates = collections.OrderedDict()
+    cf.symbolic_updates = OrderedDict()
+
+def pending_update(*args):
+    """
+    Return True if there is a pending symbolic updates for any one of the
+    variables in `args`.
+    If called with no arguments, return True if the update dictionary is nonempty.
+    """
+    if len(args) == 0:
+        return len(cf.symbolic_updates) > 0
+    else:
+        for x in _expand_args(args):
+            if is_graph_object(x) and x in cf.symbolic_updates:
+                return True
+        return False
+pending_updates = pending_update
 
 #######################
 # Print statement
@@ -355,7 +378,7 @@ def istype(obj, type_str):
     bool
     """
     # Wrap type_str if it was not passed as an iterable
-    if isinstance(type_str, str) or not isinstance(type_str, collections.Iterable):
+    if isinstance(type_str, str) or not isinstance(type_str, Iterable):
         type_str = [type_str]
     # Ensure we only have strings (not dtypes)
     type_str = [str(ts) for ts in type_str]
@@ -373,7 +396,7 @@ def _expand_args(arglst):
     Recursively expand slices, iterables, dictionaries into a list of scalar data type.
     Scalars are returned as a 1 element list.
     """
-    if not isinstance(arglst, collections.abc.Iterable):
+    if not isinstance(arglst, Iterable):
         arglst = [arglst]
     elif ('theano' in sys.modules
           and isinstance(arglst, _gettheano().gof.Variable)):
@@ -401,7 +424,7 @@ def _expand_args(arglst):
                 yield arg  # can't iterate over a 0-dim array
             else:
                 yield from _expand_args(arg)
-        elif isinstance(arg, collections.Iterable):
+        elif isinstance(arg, Iterable):
             yield from _expand_args(arg)
         else:
             yield arg
@@ -417,8 +440,14 @@ def is_constant(*obj):
         isinstance(c, cf.ConstantTypes)
         for c in _expand_args(obj))
 def is_pure_symbolic(*var):
+    """
+    Todo
+    ----
+    There seems to be some redundancy between ``is_pure_symbolic(x)``
+    and ``not graph.is_computable(x)``.
+    """
     # return 'theano' in sys.modules and any(isinstance(v, _gettheano().tensor.TensorVariable)
-    return 'theano' in sys.modules and any(isinstance(v, cf.SymbolicType)
+    return 'theano' in sys.modules and any(isinstance(v, cf.PureSymbolicType)
                                  for v in _expand_args(var))
 is_theano_variable = is_pure_symbolic
 def is_symbolic(*var):
@@ -428,16 +457,22 @@ def is_symbolic(*var):
         for v in _expand_args(var))
 def is_shimmed_or_symbolic(*var):
     return any(isinstance(v, cf.ShimmedAndGraphTypes) for v in _expand_args(var))
-def isshared(*var):
-    if 'theano' in sys.modules:
-        return any(isinstance(v, (cf.SymbolicSharedType, ShimmedShared))
-                   for v in _expand_args(var))
-    else:
-        return any(isinstance(v, ShimmedShared)
-                   for v in _expand_args(var))
+def isshared(var):
+    return isinstance(var, cf.SharedTypes)
+# def isshared(*var):
+#     if 'theano' in sys.modules:
+#         return any(isinstance(v, (cf.SymbolicSharedType, ShimmedTensorShared))
+#                    for v in _expand_args(var))
+#     else:
+#         return any(isinstance(v, ShimmedTensorShared)
+#                    for v in _expand_args(var))
 
 #######################
 # Casting functions
+
+def can_cast(from_, dtype, casting='safe'):
+    # As far as I can tell, `np.can_cast` also works on Theano types.
+    return np.can_cast(from_, dtype, casting=casting)
 
 def cast(x, dtype, same_kind=True):
     """
@@ -467,14 +502,14 @@ def cast(x, dtype, same_kind=True):
     """
     if isinstance(dtype, np.dtype):
         dtype = str(dtype)
-    elif inspect.isclass(dtype) and issubclass(dtype, np.generic):
-        dtype = str(dtype(1).dtype)  # FIXME Can we make this less ugly ?
+    elif isinstance(dtype, type) and issubclass(dtype, np.generic):
+        dtype = str(np.dtype(dtype))
     elif dtype == 'floatX':
         dtype = cf.floatX
 
     if same_kind:
         # Test that arguments are of the same kind
-        # We get kind by stripping number from dtype's string
+        # We get th 'kind' by stripping the number from dtype's string
         dtype_x = x.dtype if hasattr(x, 'dtype') else asarray(x).dtype
         kind_x = ''.join(c for c in str(dtype_x) if c.isalpha())
         kind_dtype = ''.join(c for c in str(dtype) if c.isalpha())
@@ -517,15 +552,48 @@ def asvariable(x, dtype=None, name=None):
     else:
         return np.asarray(x, dtype=dtype)
 
-def asarray(x, dtype=None, broadcastable=None):
+def asarray(x, dtype=None, broadcastable=None, symbolic=None):
     """Make x array-like.
-    Note that if broadcastable is not none, and that Theano is loaded,
+    Note that if broadcastable is not None, and that Theano is loaded,
     the return value will always be a Theano variable, even if x is
     pure Python or Numpy. This is because `broadcastable` is a Theano-only
     property.
+
+    Parameters
+    ----------
+    x: (scalar | array) | (numeric | symbolic)
+        The value we want to ensure is array-like.
+    dtype: str | dtype  (optional)
+        If ≠ None, ensure the result is of this type
+    broadcastable: Tuple[bool]  (optional)
+        Broadcast pattern
+        This is a Theano-only argument, and will force the result to be symbolic.
+    symbolic: bool
+        Override automatic selection of numeric vs symbolic. Useful to force
+        symbolic output when the inputs are all numeric.
+        Setting ``symbolic=False`` with symbolic arguments or `broadcastable`
+        ≠ ``None`` will raise an error.
+
+    Raises
+    ------
+    ValueError:
+        If `x` is symbolic or `broadcastable` ≠ ``None``, but `symbolic` is
+        ``False``.
+    TypeError:
+        If `x` is symbolic or `broadcastable` ≠ ``None`` but
+        `config.use_theano` is False.
     """
 
-    if 'theano' in sys.modules and isinstance(x, _gettheano().gof.Variable):
+    _symbolic = 'theano' in sys.modules and isinstance(x, _gettheano().gof.Variable)
+    if symbolic is None:
+        symbolic = _symbolic
+    elif symbolic is False and _symbolic is True:
+        raise ValueError("Cannot force a symbolic variable to be numeric.")
+    if (symbolic or broadcastable is not None) and not cf.use_theano:
+        raise TypeError("Attempting to create a symbolic array while "
+                        "`shim.config.use_theano` is False.")
+
+    if symbolic:
         T = _getT()
         if dtype is not None:
             retval = T.cast(T.as_tensor_variable(x), dtype)
@@ -571,6 +639,22 @@ def isarray(x):
     # Some scalar numpy types (e.g. np.int64) have the 'ndim' attribute
     return (not np.isscalar(x)) and hasattr(x, 'ndim')
 
+def issparse(var):
+    """Return True if `var` is any recognized sparse format."""
+    if 'theano.sparse' in sys.modules:
+        return (sp.sparse.issparse(var)
+                or (sys.modules['theano.sparse'].basic.SparseVariable))
+    else:
+        return sp.sparse.issparse(var)
+def isspsparse(var):
+    """Return True if `var` is sparse with `scipy.sparse` interface.
+    True for scipy.sparse, theano.sparse."""
+    if 'theano.sparse' in sys.modules:
+        return (sp.sparse.issparse(var)
+                or (sys.modules['theano.sparse'].basic.SparseVariable))
+    else:
+        return sp.sparse.issparse(var)
+
 def flatten(x, outdim=1):
     if 'theano' in sys.modules and isinstance(x, theano.gof.Variable):
         return T.flatten(x, outdim)
@@ -598,19 +682,19 @@ def addbroadcast(x, *axes):
                                  .format(ax, x.shape))
         return x
 
-def eval(x, *args, **kwargs):
-    """
-    If `x` is has an 'eval' method, return `x.eval(*args, **kwargs)`. Otherwise just
-    return `x`. In the latter case, `*args` and `**kwargs` are ignored, and a
-    warning is printed if they are not empty.
-    """
-    if hasattr(x, 'eval'):
-        return x.eval(*args, **kwargs)
-    else:
-        if len(args) + len(kwargs) > 0:
-            logger.warning("Ignoring arguments to `eval`: object does not have "
-                           "an `eval` method.")
-        return x
+# def eval(x, *args, **kwargs):
+#     """
+#     If `x` is has an 'eval' method, return `x.eval(*args, **kwargs)`. Otherwise just
+#     return `x`. In the latter case, `*args` and `**kwargs` are ignored, and a
+#     warning is printed if they are not empty.
+#     """
+#     if hasattr(x, 'eval'):
+#         return x.eval(*args, **kwargs)
+#     else:
+#         if len(args) + len(kwargs) > 0:
+#             logger.warning("Ignoring arguments to `eval`: object does not have "
+#                            "an `eval` method.")
+#         return x
 
 #####################
 # Convenience function for max / min
@@ -788,12 +872,18 @@ def ifelse(condition, then_branch, else_branch, name=None, outshape=None):
             return else_branch
 
 def switch(cond, ift, iff):
+    """
+    For the equivalent to the single-argument version of `np.where`,
+    see `nonzero`.
+    """
     if (cf.use_theano and (isinstance(cond, theano.gof.Variable)
                         or isinstance(ift, theano.gof.Variable)
                         or isinstance(iff, theano.gof.Variable))):
         return T.switch(cond, ift, iff)
     else:
         return np.where(cond, ift, iff)
+where = switch
+where.__doc__ = """Alias for `switch`."""
 
 #####################
 # Loop constructs
@@ -802,8 +892,8 @@ def scan(fn, sequences=None, outputs_info=None, non_sequences=None, n_steps=None
          truncate_gradient=-1, go_backwards=False, mode=None, name=None, profile=False,
          allow_gc=None, strict=False, return_list=False):
     """
-    WIP: Does not support taps. When using NumPy, every argument after :param:n_steps
-    except :param:return_list is ignored.
+    WIP: Does not support taps. When using NumPy, every argument after `n_steps`
+    except `return_list` is ignored.
     """
     if is_theano_object(sequences, outputs_info, non_sequences, n_steps):
         return gettheano().scan(
@@ -837,21 +927,22 @@ def scan(fn, sequences=None, outputs_info=None, non_sequences=None, n_steps=None
 #####################
 # Random number generation
 
-class NumpyRNG:
-    def __init__(self, seed=None):
-        self.seed(seed)
-
-    def seed(self, seed=None):
-        np.random.seed(seed)
-
+class NumpyRNG(np.random.RandomState):
+    # We inherit from the legacy RNG because that's what Theano uses.
+    # def __init__(self, seed=None):
+    #     self.seed(seed)
+    #
+    # def seed(self, seed=None):
+    #     np.random.seed(seed)
+    #
     def normal(self, size=(), avg=0.0, std=1.0, ndim=None, name=None):
-        return np.random.normal(loc=avg, scale=std, size=size)
+        return super().normal(loc=avg, scale=std, size=size)
 
     def uniform(self, size=(), low=0.0, high=1.0, ndim=None, name=None):
-        return np.random.uniform(low, high, size)
+        return super().uniform(low, high, size)
 
     def binomial(self, size=(), n=1, p=0.5, ndim=None, name=None):
-        return np.random.binomial(n, p, size)
+        return super().binomial(n, p, size)
 
 def make_TheanoRNG(rng_class):
     def add_kwarg_name(f):
@@ -931,33 +1022,45 @@ def tensor(object, name=None, dtype=None):
     >>> y = shim.tensor((5,), dtype='float64')
     >>> z = shim.tensor((5,3), name='z', dtype='int32')
     """
-    # Infer the tensor shape
+    # Try to infer the tensor shape, test_value, dtype and broadcast pattern
     broadcastable = None
-    if isinstance(object, tuple):
-        shape = object
-    elif hasattr(object, 'shape'):
-        shape = object.shape
-        if dtype is None: dtype = object.dtype
-    elif hasattr(object, 'broadcastable'):
-        if dtype is None: dtype = object.dtype
-        broadcastable = object.broadcastable
-    # Try to infer a test value
+    shape = None
     if isinstance(object, np.ndarray):
+        # Numpy arrays become the symbolic's test value
+        shape = object.shape
         test_value = object
-    else:
-        test_value = None
-    # Scalar inputs become 0-dim arrays
-    if isinstance(object, Number):
+        if dtype is None: dtype = object.dtype
+        broadcastable = shape_to_broadcast(shape)
+    elif isinstance(object, Number):
+        # Scalar inputs become 0-dim arrays
         shape = ()
         test_value = object
-        dtype = str(np.dtype(type(object)))
+        if dtype is None: dtype = str(np.dtype(type(object)))
         broadcastable = ()
-    if dtype is None:
-        raise TypeError(
-            "You must specify `dtype` if `object` does not provide one.")
+    elif hasattr(object, broadcastable):
+        # Theano symbolics end up here
+        shape = object.shape   # This is going to be a symbolic expression
+        if dtype is None: dtype = object.dtype
+        broadcastable = object.broadcastable
+        # Not possible to set test_value
+        if not cf.use_theano:
+            raise TypeError("Somehow you specified what looks like a symbolic "
+                            "object, yet Theano is not loaded.\n"
+                            f"object: {object}\ntype: {type(object)}")
+    elif isinstance(object, tuple):
+        # All we have is a shape – we use array of ones as test_value
+        shape = object
+        if dtype is None:
+            raise TypeError(
+                "You must specify `dtype` if `object` does not provide one.")
+        test_value = np.ones(shape, dtype=dtype)
+        broadcastable = shape_to_broadcast(shape)
+    else:
+        raise TypeError("Unrecognized input type for `theano_shim.tensor`: "
+                        f"{object} (type: {type(object)}.")
     if not cf.use_theano:
-        # If `shape` is undefined at this point, we gave a wrong argument
-        return np.array(shape, dtype=dtype)
+        # `test_value` should be defined at this point
+        return np.array(test_value, dtype=dtype)
     else:
         if broadcastable is None: broadcastable = shape_to_broadcast(shape)
         tensor = getT().tensor(dtype, broadcastable, name=name)
@@ -968,7 +1071,7 @@ def tensor(object, name=None, dtype=None):
 ######################
 # Shared variable constructor
 
-class ShimmedShared(np.ndarray):
+class ShimmedTensorShared(np.ndarray):
     # See https://docs.scipy.org/doc/numpy/user/basics.subclassing.html
     # for indications on subclassing ndarray
 
@@ -993,7 +1096,7 @@ class ShimmedShared(np.ndarray):
         return id(self) == id(other)
 
     def _as_TensorVariable(self):
-        # Allow mixing of ShimmedShared and Theano variables
+        # Allow mixing of ShimmedTensorShared and Theano variables
         # Theano looks for this function first when multiplying with non-Theano types
         if cf.use_theano:
             return T.constant(self.get_value())
@@ -1017,7 +1120,7 @@ class ShimmedShared(np.ndarray):
                 self.resize(new_value.shape, refcheck=False)
                 # refcheck is necessary to get this to work, but bypasses
                 # the reference checks. Reference errors might occur if
-                # a reference to this ShimmedShared variable exists elsewhere,
+                # a reference to this ShimmedTensorShared variable exists elsewhere,
                 # and we try to access it after the resize. This is the kind
                 # of thing you shouldn't do anyway with Theano variables.
             self[:] = new_value
@@ -1025,7 +1128,7 @@ class ShimmedShared(np.ndarray):
             # Scalars will fail on the above
             assert(isscalar(new_value))
                 # np.isscalar will fail on 0-dim arrays; isscalar works
-            self = super(ShimmedShared, self).__setitem__(None, new_value)
+            self = super(ShimmedTensorShared, self).__setitem__(None, new_value)
 
     def eval(self, inputs_to_values=None):
         return self.get_value()
@@ -1035,8 +1138,8 @@ class ShimmedShared(np.ndarray):
         """For Numpy arrays, an axis is broadcastable iff it has length one."""
         return tuple(s==1 for s in self.shape)
 
-cf.add_terminating_types([ShimmedShared])
-cf._shared_types += (ShimmedShared,)
+cf.add_terminating_types([ShimmedTensorShared])
+cf._shared_types += (ShimmedTensorShared,)
 
 def shared(value, name=None, strict=False, allow_downcast=None, symbolic=True,
            **kwargs):
@@ -1061,7 +1164,7 @@ def shared(value, name=None, strict=False, allow_downcast=None, symbolic=True,
         return theano.shared(value, name, strict, allow_downcast,
                              broadcastable=broadcast_pattern, **kwargs)
     else:
-        return ShimmedShared(value, name, strict, allow_downcast, **kwargs)
+        return ShimmedTensorShared(value, name, strict, allow_downcast, **kwargs)
 
 ######################
 # Interchangeable set_subtensor
@@ -1070,9 +1173,9 @@ def set_subtensor(x, y, inplace=False, tolerate_aliasing=False):
                                     or isinstance(y, _gettheano().gof.Variable)):
         return _getT().set_subtensor(x, y, inplace, tolerate_aliasing)
     else:
-        assert(x.base is not None)
+        assert x.base is not None
             # Ensure that x is a view of another ndarray
-        assert(x.shape == y.shape)
+        assert x.shape == y.shape
         x[:] = y
         return x.base
 
@@ -1081,9 +1184,9 @@ def inc_subtensor(x, y, inplace=False, tolerate_aliasing=False):
                                     or isinstance(y, _gettheano().gof.Variable)):
         return T.inc_subtensor(x, y, inplace, tolerate_aliasing)
     else:
-        assert(x.base is not None)
+        assert x.base is not None
             # Ensure that x is a view of another ndarray
-        assert(x.shape == y.shape)
+        # assert x.shape == y.shape
         x[:] += y
         return x.base
 
@@ -1103,6 +1206,20 @@ def reshape(array, newshape, ndim=None):
         return array.reshape(newshape, ndim)
     else:
         return array.reshape(newshape)
+
+def atleast_1d(*arys):
+    """
+    In contrast to `numpy.atleast_1d`, will not cast lists or tuples to arrays.
+    This is to allow lists of symbolic variables.
+    """
+    if len(arys) == 1:
+        a = arys[0]
+        if isscalar(a):
+            a = add_axes(a, 1)
+        return a
+    else:
+        assert len(arys) > 1
+        return [atleast_1d(a) for a in arys]
 
 def add_axes(x, num=1, pos='left'):
     """
@@ -1125,7 +1242,7 @@ def add_axes(x, num=1, pos='left'):
             + -1 : equivalent to 'before last'
             + `x.ndim` : equivalent to 'after'
     """
-    if is_theano_variable(x):
+    if is_theano_object(x):
         if pos in ['left', 'before', 'begin', 'first']:
             shuffle_pattern = ['x']*num
             shuffle_pattern.extend(range(x.ndim))
@@ -1157,7 +1274,7 @@ def add_axes(x, num=1, pos='left'):
                 raise ValueError("Unrecognized argument {} for pos.".format(pos))
 
 def moveaxis(a, source, destination):
-    if is_theano_variable(x):
+    if is_theano_object(x):
         axes_lst = list(range(x.ndim))
         axes_lst.pop(source)
         axes_lst = axes_lst[:destination] + [source] + axes_lst[destination:]
@@ -1334,7 +1451,7 @@ def lfilter(size, b, a, x, *args, **kwargs):
 ################################
 # Module initialization
 
-load(load_theano=False)
+load('numpy')
     # By default, don't load Theano
 
 #####################
@@ -1363,8 +1480,15 @@ def all(x):
         return T.all(x)
     else:
         return np.all(x)
-def arange(start, stop=None, step=1, dtype=None):
-    if is_theano_object(start, stop, step, dtype):
+def arange(start, stop=None, step=1, dtype=None, symbolic=None):
+    _symb = is_theano_object(start, stop, step, dtype)
+    if symbolic is None:
+        symbolic = _symb
+    elif _symb and not symbolic:
+        raise TypeError("Attempting to create a symbolic array while "
+                        "`shim.config.use_theano` is False.")
+    if symbolic:
+        dtype = str(np.dtype(dtype))  # Convert nptype and dtype to string
         return T.arange(start, stop, step, dtype)
     else:
         return np.arange(start, stop, step, dtype)
@@ -1373,6 +1497,39 @@ def broadcast_to(array, shape, subok=False):
         return T.ones(shape) * array
     else:
         return np.broadcast_to(array, shape, subok)
+def copy(array, symbolic=False, name=None):
+    """
+    NumPy `array`:
+        Calls ``array.copy()``.
+    Symbolic `array` & `symbolic` == True:
+        Make a symbolic copy of the `array` by calling ``array.copy(name=name)``.
+        `array` appears in the computational graph of the copy.
+    Symbolic `array` & `symbolic` == False:
+        Make a copy of the Python object by calling ``copy.copy(array)``.
+        ``array`` does not appear in the computational graph of the copy, but
+        inputs to ``array`` do.
+
+    If `name` != `None` and `array` is symbolic, it is renamed accordingly.
+
+    >>> import theano_shim as shim
+    >>> shim.load('theano')
+    >>> y = shim.tensor(np.array(3.), 'y')
+    >>> z = shim.copy(y)
+    >>> z2 = shim.copy(y**2)
+    >>> zsymb = shim.copy(y, symbolic=True)
+    >>> y in shim.graph.inputs(z)      # False
+    >>> y in shim.graph.inputs(z2)     # True
+    >>> y in shim.graph.inputs(zsymb)  # True
+    """
+    if not is_theano_object(array):
+        return array.copy()
+    elif symbolic:
+        return array.copy(name=name)
+    else:
+        c = copymodule.copy(array)
+        if name is not None:
+            c.name = name
+        return c
 def concatenate(tensor_list, axis=0):
     if any(is_theano_object(x) for x in tensor_list):
         return T.concatenate(tensor_list, axis)
@@ -1407,7 +1564,7 @@ def exp(x):
     if is_theano_object(x):
         return T.exp(x)
     else:
-        # if isinstance(x, ShimmedShared):
+        # if isinstance(x, ShimmedTensorShared):
         #     x = x.get_value()
         return np.exp(x)
 def gammaln(x):
@@ -1447,6 +1604,18 @@ def multiply(x, y):
         return x*y
     else:
         return np.multiply(x, y)
+def nonzero(x):
+    """
+    Returns:
+        (numeric  x) tuple of Array[int], one array per dimension.
+        (symbolic x) Python tuple of symbolic Subtensor, one Subtensor per dimension.
+    """
+    if isscalar(x):
+        raise ValueError("Nonzero only supports non-scalar arrays")
+    if is_theano_object(x):
+        return T.nonzero(x)
+    else:
+        return np.nonzero(x)
 def ones(shape, dtype=None):
     if is_theano_object(shape):
         return T.ones(shape, dtype)
@@ -1481,7 +1650,7 @@ def sum(x, axis=None, dtype=None, acc_dtype=None, keepdims=np._NoValue):
     if is_theano_object(x):
         result = T.sum(x, axis, dtype, acc_dtype)
         if keepdims and keepdims is not np._NoValue:
-            if not isinstance(axis, collections.Iterable):
+            if not isinstance(axis, Iterable):
                 axes = [axis]
             else:
                 axes = sorted(axis)
