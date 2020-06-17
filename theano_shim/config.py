@@ -178,7 +178,7 @@ class Config(metaclass=Singleton):
         """
         return self.SharedTypes + self.GraphTypes
     @property
-    def PureSymbolicType(self):
+    def PureSymbolicTypes(self):
         """
         Matches:
             Tensor variables
@@ -192,8 +192,8 @@ class Config(metaclass=Singleton):
            see `~config.Config.TensorDescType`.
         """
         if 'theano' not in sys.modules: return ()
-        else: return _getT().TensorVariable
-    TensorType = PureSymbolicType
+        else: return (_getT().TensorVariable, _gettheano().scalar.basic.ScalarVariable)
+    TensorType = PureSymbolicTypes
     @property
     def SymbolicConstantType(self):
         """

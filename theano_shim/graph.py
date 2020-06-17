@@ -212,8 +212,17 @@ def eval(expr, givens=None, max_cost=10, if_too_costly='raise'):
         if givens is None: givens = {}
         for k, v in givens.items():
             givens[k] = core.cast(v, k.dtype)
-        f = core.gettheano().function(
-            [], expr, givens=givens, on_unused_input='ignore')
+        try:
+            f = core.gettheano().function(
+                [], expr, givens=givens, on_unused_input='ignore')
+        except MissingInputError:
+            # Make the Theano error message more friendly and useful
+            symbinputs = (set(shim.graph.pure_symbolic_inputs(expr))
+                          - set(givens))
+            raise MissingInputError(
+                "You called `eval()` on a graph with pure symbolic inputs "
+                "(shared variables are fine) Provide values for these with "
+                f"the `givens` parameter.\nProblematic inputs: {symbinputs}.")
         return f()
 
 ######################

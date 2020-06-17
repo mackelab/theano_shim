@@ -447,7 +447,7 @@ def is_pure_symbolic(*var):
     and ``not graph.is_computable(x)``.
     """
     # return 'theano' in sys.modules and any(isinstance(v, _gettheano().tensor.TensorVariable)
-    return 'theano' in sys.modules and any(isinstance(v, cf.PureSymbolicType)
+    return 'theano' in sys.modules and any(isinstance(v, cf.PureSymbolicTypes)
                                  for v in _expand_args(var))
 is_theano_variable = is_pure_symbolic
 def is_symbolic(*var):
@@ -1594,6 +1594,11 @@ def max(x):
         return T.max(x)
     else:
         return np.max(x)
+def mean(x):
+    if is_theano_object(x):
+        return T.mean(x)
+    else:
+        return np.mean(x)
 def min(x):
     if is_theano_object(x):
         return T.min(x)
