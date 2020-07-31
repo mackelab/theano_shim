@@ -275,7 +275,7 @@ def print(x, message=None, printfn='print', message_prefix="DEBUG - ",
         if printfn == 'print':
             return theano.printing.Print(msg, global_fn=_get_print_fn(file))(x)
         elif printfn == 'debugprint':
-            print(msg)
+            builtins.print(msg)
             theano.printing.debugprint(x, file=file)
             return x
         elif printfn == 'eval':
@@ -284,7 +284,7 @@ def print(x, message=None, printfn='print', message_prefix="DEBUG - ",
             except theano.gof.fg.MissingInputError:
                 return theano.printing.Print(msg, global_fn=_get_print_fn(file))(x)
             else:
-                print(msg + " Value of {}: {}".format(str(x), val))
+                builtins.print(msg + " Value of {}: {}".format(str(x), val))
                 return x
         else:
             raise ValueError("Unrecognized print flag '{}'."
@@ -306,6 +306,9 @@ def pprint(x):
         return _gettheano().printing.pprint(x)
     else:
         return str(x)
+
+def debugprint(x, file=sys.stdout):
+    return print(x, printfn='debugprint', message="", message_prefix="", file=file)
 
 #######################
 # Assert equivalent
