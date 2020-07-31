@@ -1040,12 +1040,20 @@ def tensor(object, name=None, dtype=None):
         test_value = object
         if dtype is None: dtype = str(np.dtype(type(object)))
         broadcastable = ()
-    elif hasattr(object, broadcastable):
+    elif hasattr(object, 'broadcastable'):
         # Theano symbolics end up here
-        shape = object.shape   # This is going to be a symbolic expression
+        # shape = object.shape   # This is going to be a symbolic expression
         if dtype is None: dtype = object.dtype
         broadcastable = object.broadcastable
-        # Not possible to set test_value
+        if name is None:
+            name = f"{object.name} (tensor)"
+        if hasattr(object.tag, 'test_value'):
+            test_value = object.tag.test_value
+        elif isshared(object):
+            test_value = object.get_value()
+        else:
+            # Not possible to set test_value
+            test_value = None
         if not cf.use_theano:
             raise TypeError("Somehow you specified what looks like a symbolic "
                             "object, yet Theano is not loaded.\n"
