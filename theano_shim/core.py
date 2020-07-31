@@ -938,13 +938,13 @@ class NumpyRNG(np.random.RandomState):
     # def seed(self, seed=None):
     #     np.random.seed(seed)
     #
-    def normal(self, size=(), avg=0.0, std=1.0, ndim=None, name=None):
+    def normal(self, size=None, avg=0.0, std=1.0, ndim=None, name=None):
         return super().normal(loc=avg, scale=std, size=size)
 
-    def uniform(self, size=(), low=0.0, high=1.0, ndim=None, name=None):
+    def uniform(self, size=None, low=0.0, high=1.0, ndim=None, name=None):
         return super().uniform(low, high, size)
 
-    def binomial(self, size=(), n=1, p=0.5, ndim=None, name=None):
+    def binomial(self, size=None, n=1, p=0.5, ndim=None, name=None):
         return super().binomial(n, p, size)
 
 def make_TheanoRNG(rng_class):
