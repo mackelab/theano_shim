@@ -131,6 +131,9 @@ class Config(metaclass=Singleton):
                         + self.ConstantTypes)
         else:
             dyntypes = self.ConstantTypes
+        if 'xarray' in sys.modules:
+            xr = sys.modules['xarray']
+            dyntypes += (xr.Dataset, xr.DataArray)
         return self._TerminatingTypes + dyntypes
 
     @staticmethod

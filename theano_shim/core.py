@@ -401,13 +401,13 @@ def _expand_args(arglst):
     elif ('theano' in sys.modules
           and isinstance(arglst, _gettheano().gof.Variable)):
         arglst = [arglst]
-    elif isinstance(arglst, cf._TerminatingTypes):
+    elif isinstance(arglst, cf.TerminatingTypes):
         arglst = [arglst]
     for arg in arglst:
         if 'theano' in sys.modules and isinstance(arg, _gettheano().gof.Variable):
             # Theano variables aren't iterable
             yield arg
-        elif isinstance(arg, cf._TerminatingTypes):
+        elif isinstance(arg, cf.TerminatingTypes):
             yield arg
         elif isinstance(arg, slice):
             yield arg.start
