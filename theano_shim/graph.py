@@ -186,7 +186,9 @@ def eval(expr, givens=None, max_cost=10, if_too_costly='raise'):
     elif not core.is_graph_object(expr):
         return expr
     elif isinstance(expr, slice):
-        return slice(eval(expr.start), eval(expr.stop), eval(expr.step))
+        kwargs = dict(givens=givens, max_cost=max_cost, if_too_costly=if_too_costly)
+        return slice(eval(expr.start, **kwargs), eval(expr.stop, **kwargs),
+                     eval(expr.step, **kwargs))
     # TODO: If iterable of shared vars, should just call `get_value()`
 
     # "Standard" code path
