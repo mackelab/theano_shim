@@ -68,6 +68,33 @@ class csr_matrix_wrapper(matT):
     as a dot product) with the more standard element-wise multiplication.
     This makes it consistent with Theano's * operator.
     """
+    ## Pydantic parser ##
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+    @classmethod
+    def validate(cls, value, field):
+        if (not isinstance(value, (tuple, list)) or len(value) != 4
+            or not all(isinstance(v, collections.abc.Iterable) for v in value[:3])
+            or not isinstance(value[3], (tuple, list)) or len(value[3]) != 2):
+            raise TypeError(
+                f"Field '{field.name}' expects a tuple of four elements, the "
+                "the first three corresponding to the 'data', 'indices', and "
+                "'index pointer' arrays of a CSR sparse array, and the last a "
+                "tuple giving the shape of that array. Instead, the value "
+                f"received was {value} [type: {type(value)}].")
+        return CSR(*value, symbolic=False)
+    @classmethod
+    def __modify_schema__(cls, field_schema):
+        field_schema.update(
+            type="array",
+            description="('data', 'indices', 'indptr', 'shape')"
+            )
+    @staticmethod
+    def json_encoder(value):
+        return (value.data, value.indices, value.indptr, value.shape)
+
+    ## __mul__ operator replacement ##
     def _array_mul(self, other):
         return self.multiply(other)
     def _array_rmul(self, other):
