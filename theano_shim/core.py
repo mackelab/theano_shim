@@ -1210,19 +1210,19 @@ def reshape(array, newshape, ndim=None):
     else:
         return array.reshape(newshape)
 
-def atleast_1d(*arys):
+def atleast_1d(*arrays):
     """
     In contrast to `numpy.atleast_1d`, will not cast lists or tuples to arrays.
     This is to allow lists of symbolic variables.
     """
-    if len(arys) == 1:
-        a = arys[0]
+    if len(arrays) == 1:
+        a = arrays[0]
         if isscalar(a):
             a = add_axes(a, 1)
         return a
     else:
-        assert len(arys) > 1
-        return [atleast_1d(a) for a in arys]
+        assert len(arrays) > 1
+        return [atleast_1d(a) for a in arrays]
 
 def add_axes(x, num=1, pos='left'):
     """
@@ -1558,6 +1558,11 @@ def cumsum(x, axis=None, dtype=None):
         return T.cumsum(x, axis)
     else:
         return np.cumsum(x, axis, dtype)
+def diag(x, k=0):
+    if is_theano_object(x, k):
+        return T.diag(x, k=k)
+    else:
+        return np.diag(x, k=k)
 def dot(x, y):
     if is_theano_object(x) or is_theano_object(y):
         return T.dot(x, y)
