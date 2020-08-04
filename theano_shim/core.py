@@ -512,7 +512,7 @@ def cast(x, dtype, same_kind=True):
 
     if same_kind:
         # Test that arguments are of the same kind
-        # We get th 'kind' by stripping the number from dtype's string
+        # We get the 'kind' by stripping the number from dtype's string
         dtype_x = x.dtype if hasattr(x, 'dtype') else asarray(x).dtype
         kind_x = ''.join(c for c in str(dtype_x) if c.isalpha())
         kind_dtype = ''.join(c for c in str(dtype) if c.isalpha())
@@ -646,7 +646,7 @@ def issparse(var):
     """Return True if `var` is any recognized sparse format."""
     if 'theano.sparse' in sys.modules:
         return (sp.sparse.issparse(var)
-                or (sys.modules['theano.sparse'].basic.SparseVariable))
+                or isinstance(var, sys.modules['theano.sparse'].basic.SparseVariable))
     else:
         return sp.sparse.issparse(var)
 def isspsparse(var):
@@ -654,7 +654,7 @@ def isspsparse(var):
     True for scipy.sparse, theano.sparse."""
     if 'theano.sparse' in sys.modules:
         return (sp.sparse.issparse(var)
-                or (sys.modules['theano.sparse'].basic.SparseVariable))
+                or isinstance(var, sys.modules['theano.sparse'].basic.SparseVariable))
     else:
         return sp.sparse.issparse(var)
 
