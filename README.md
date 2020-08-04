@@ -1,6 +1,6 @@
 # Theano/Numpy shim
 
-Copyright (c) 2017 Alexandre René
+Copyright (c) 2017-2020 Alexandre René
 
 ## Description
 A simple convenient exchangeable interface, to avoid the need of
@@ -18,13 +18,13 @@ as 'shim' datatypes for random number streams and shared variables.
 At the top of your code, include the line
 
     import theano_shim as shim
-    
+
 By default this will not even try to load Theano, so you can use it on
 a machine where Theano is not installed.
 To 'switch on' Theano, add the following below the import:
 
     shim.load_theano()
-    
+
 You can switch it back to using pure Numpy `shim.load(False)`. Theano can also be loaded with `shim.load()`
 
 ### Writing your own conditionals
@@ -34,11 +34,11 @@ Theano and Numpy cases yourself. `theano_shim` provides a few functions
 to aid this task:
 
 - `is_theano_variable` checks whether a variable is a symbolic variable
-- `is_theano_object` checks whether a variable is any Theano object 
+- `is_theano_object` checks whether a variable is any Theano object
    (including shared variables)
 - `isshared` checks whether a variable is a shared object (either a Theano
    shared variable, or an instance `ShimmedTensorShared` which this module provides).
-   
+
 You can also test on `theano_shim.config.use_theano` to check whether Theano
 is loaded.
 
