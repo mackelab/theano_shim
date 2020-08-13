@@ -947,6 +947,10 @@ class NumpyRNG(np.random.RandomState):
     def binomial(self, size=None, n=1, p=0.5, ndim=None, name=None):
         return super().binomial(n, p, size)
 
+    @property
+    def gen_seedgen(self):
+        return self
+
 def make_TheanoRNG(rng_class):
     def add_kwarg_name(f):
         def wrapper(self, *args, **kwargs):
@@ -997,6 +1001,9 @@ def copy_random_state(from_rng, to_rng):
         to_rng.rstate = from_rng.rstate
     for (su1, su2) in zip(from_rng.state_updates, to_rng.state_updates):
         su2[0].set_value(su1[0].get_value())
+
+def reseed_rng(rng, new_seed):
+    rng.gen_seedgen.seed(new_seed)
 
 ######################
 # Tensor constructors
