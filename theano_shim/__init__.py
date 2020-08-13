@@ -4,10 +4,10 @@ from . import graph
 from . import symbolic
 
 def load_theano():
-    load(True)
+    load('theano')
 
-def load(load_theano=True, reraise=False):
-    core.load(load_theano, reraise)
+def load(library='theano', reraise=False):
+    core.load(library, reraise)
     graph.load_exceptions()
 
 # Common functions which are worth having in global namespace

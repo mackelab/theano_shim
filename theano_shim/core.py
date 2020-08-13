@@ -55,7 +55,7 @@ logger = logging.getLogger('theano_shim')
 
 ######################
 def load_theano():
-    load(True)
+    load('theano')
 
 class DummyT:
     def __getattr__(self, attr):

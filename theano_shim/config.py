@@ -86,7 +86,7 @@ class Config(metaclass=Singleton):
         if value not in self._library_values:
             libnames = ', '.join(f"'{l}'" for l in self._library_values)
             raise ValueError("`library` attribute can only be set to one of "
-                             f"{libnames}.")
+                             f"{libnames}. Received '{value}'.")
         self._library = value
         return value
 
