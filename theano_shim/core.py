@@ -458,6 +458,7 @@ def is_symbolic(*var):
         isinstance(v, cf.GraphTypes)
         and not isinstance(v, cf.ConstantTypes)
         for v in _expand_args(var))
+    issymbolic = is_symbolic  # With NumPy having no consistent convention, it's nigh to impossible to memorize, so just accept both
 def is_shimmed_or_symbolic(*var):
     return any(isinstance(v, cf.ShimmedAndGraphTypes) for v in _expand_args(var))
 def isshared(var):
