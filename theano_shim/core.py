@@ -532,7 +532,12 @@ def cast(x, dtype, same_kind=True):
     elif hasattr(x, 'astype'):
         return x.astype(dtype)
     else:
-        return np.dtype(dtype).type(x, keepdims=True)
+        if np.__version__ >= '1.19':
+            return np.dtype(dtype).type(x)
+        else:
+            # I don't remember which NumPy version I was using when I added the
+            # keepdims arg, but I'm pretty sure it was required then
+            return np.dtype(dtype).type(x, keepdims=True)
 
 def cast_floatX(x, same_kind=True):
     return cast(x, dtype=cf.floatX, same_kind=same_kind)
