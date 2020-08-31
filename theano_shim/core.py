@@ -1004,7 +1004,25 @@ def copy_random_state(from_rng, to_rng):
         su2[0].set_value(su1[0].get_value())
 
 def reseed_rng(rng, new_seed):
-    rng.gen_seedgen.seed(new_seed)
+    """
+    For Numpy legacy RandomState, just calls `rng.seed`.
+    For Theano, reseeds both the seeds of the current random streams, and
+    the seed generator for future ones.
+    """
+    if isinstance(rng, np.random.RandomState):
+        rng.seed(new_seed)
+    elif is_symbolic(rng):
+        # I don't know why Theano chose to create a throwaway seedgen inside `seed`,
+        # but it means that set reliable seeds for both current and new RNG streams,
+        # we need to emulate `gen_seedgen` being used to reseed the RNGs.
+        # `rng.seed` reseeds existing RNG streams, calling `seedgen.randint(2**30)`
+        # as many times as there are RNG streams
+        rng.seed(new_seed)
+        # Reseed the gen_seedgen for new RNGs, and advance it as though it was
+        # used in `seed`.
+        rng.gen_seedgen.seed(new_seed)
+        for i in range(len(rng.state_updates)):
+            rng.randint(2**30)
 
 ######################
 # Tensor constructors
