@@ -189,6 +189,10 @@ def add_update(variable, value=None):
         `(variable, value)` tuples.
     value: symbolic expression
         Value to assign to variable. Ignored if `variable` is a dict or iterable
+
+    Returns
+    -------
+    None
     """
     if isinstance(variable, dict):
         for key, val in variable.items():
@@ -197,11 +201,37 @@ def add_update(variable, value=None):
         for key, val in variable:
             add_update(key, val)
     else:
-        logger.debug("Adding Theano update : {} -> {}".format(variable.name, str(value)))
+        logger.debug(f"Adding Theano update: {variable.name} -> {str(value)}")
         if not isshared(variable):
             raise ValueError("The updates mechanism only applies to shared variables.")
         cf.symbolic_updates[variable] = value
 add_updates = add_update
+
+def remove_update(variable):
+    """
+    Parameters
+    ----------
+    variable: shared variable | dict | iterable
+        Shared variable to update.
+        Can also be a dictionary of `variable:value` pairs, or an iterable of
+        `(variable, value)` tuples.
+
+    Returns
+    -------
+    None
+    """
+    if isinstance(variable, dict):
+        for key, val in variable.items():
+            add_update(key, val)
+    elif isinstance(variable, Sequence):
+        for key, val in variable:
+            add_update(key, val)
+    else:
+        logger.debug(f"Removing Theano update: {variable.name}")
+        if not isshared(variable):
+            raise ValueError("The updates mechanism only applies to shared variables.")
+        del cf.symbolic_updates[variable]
+remove_updates = remove_update
 
 def get_updates():
     return cf.symbolic_updates
@@ -241,7 +271,7 @@ def _get_print_fn(file=sys.stdout):
             print(op.message, attr, '=', pmsg, file=file)
     return _print_fn
 
-def print(x, message=None, printfn='print', message_prefix="DEBUG - ",
+def print(x, message=None, printfn='print', message_prefix="SHIM - ",
           file=sys.stdout):
     """
     Non-Theano version outputs to the logger at the debug level.
@@ -262,7 +292,7 @@ def print(x, message=None, printfn='print', message_prefix="DEBUG - ",
           print the output, otherwise fall back on theano.printing.Print
     message_prefix: string
         String to prepend to the message. Can be used to distinguish
-        different types of outputs. Defaults to "DEBUG - ".
+        different types of outputs. Defaults to "SHIM - ".
     file: file handle
         Where to print the value; default is 'sys.stdout'.
         Same argument as used in print() or theano.printing.debugprint.
@@ -271,6 +301,14 @@ def print(x, message=None, printfn='print', message_prefix="DEBUG - ",
         message = getattr(x, 'name', "")
         if message is None: message = ""  # x.name might be None
     if is_theano_object(x):
+        # EARLY EXIT: - slice
+        # TODO?: list, tuple
+        if isinstance(x, slice):
+            kw = dict(printfn=printfn, message_prefix=message_prefix, file=file)
+            start = print(x.start, message=message+" (start)", **kw)
+            stop = print(x.stop, message=message+" (stop)", **kw)
+            step = x.step and print(x.step, message=message+" (step)", **kw)
+            return slice(start, stop, step)
         msg = message_prefix + message
         if printfn == 'print':
             return theano.printing.Print(msg, global_fn=_get_print_fn(file))(x)
@@ -297,6 +335,29 @@ def print(x, message=None, printfn='print', message_prefix="DEBUG - ",
         #logger.debug(msg + str(x))
         builtins.print(message_prefix + msg + str(x), file=file)
         return x
+
+def print_array(x, idx=slice(None), message=None, message_prefix="SHIM - ",
+                file=sys.stdout):
+    """
+    Helper function for printing just one element in an array.
+    All parameters except `idx` are the same as for `print`.
+    Returns an identity operation on `x`, so that it can be used as follows
+
+    >>> x = shim.tensor(np.arange(100, 0.1))
+    >>> x = shim.print_array(x, idx=3)
+    >>> for i in range(2):
+    >>>   x *= shim.print_array(x, idx=np.s_[2:5])
+    0.3__str__ DEBUG -
+    [0.4, 0.6, 0.8]__str__ DEBUG -
+    [0.8, 1.2, 1.6]__str__ DEBUG -
+    """
+    return set_subtensor(x[idx],
+                         print(x[idx],
+                               message=message,
+                               message_prefix=message_prefix,
+                               file=file
+                               )
+                         )
 
 def pprint(x):
     """
