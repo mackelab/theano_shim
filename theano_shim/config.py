@@ -267,8 +267,15 @@ class Config(metaclass=Singleton):
         else: return _getT().shared_randomstreams.RandomStateSharedVariable
     @property
     def CompiledType(self):
-        if 'theano' not in sys.modules: return ()
-        else: return _gettheano().compile.function_module.Function
+        if 'theano' not in sys.modules:
+            return ()
+        else:
+            try:
+                # The version from conda seems to use this. I'm not sure which code version
+                return _gettheano().compile.function.types.Function
+            except AttributeError:
+                # As of 23 Dec 2020, v1.0.5, the Theano master still seems to use this
+                return _gettheano().compile.function_module.Function
     @property
     def TensorDescType(self):
         """
