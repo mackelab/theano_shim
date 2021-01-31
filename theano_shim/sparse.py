@@ -75,8 +75,8 @@ class csr_matrix_wrapper(matT):
     @classmethod
     def validate(cls, value, field):
         if (not isinstance(value, (tuple, list)) or len(value) != 4
-            or not all(isinstance(v, collections.abc.Iterable) for v in value[:3])
-            or not isinstance(value[3], (tuple, list)) or len(value[3]) != 2):
+            or not all(isinstance(v, collections.abc.Sized) for v in value)
+            or len(value[3]) != 2):
             raise TypeError(
                 f"Field '{field.name}' expects a tuple of four elements, the "
                 "the first three corresponding to the 'data', 'indices', and "

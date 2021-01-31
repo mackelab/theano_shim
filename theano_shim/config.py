@@ -26,6 +26,17 @@ def _getT():
         return sys.modules['theano'].tensor
     else:
         raise RuntimeError("Tried to access theano.tensor, but Theano has not been loaded.")
+def _get_rng_mrg():
+    if 'theano' in sys.modules:
+        try:
+            return sys.modules['theano'].sandbox.rng_mrg
+        except AttributeError:
+            # It is possible for 'theano' to have been imported without being
+            # loaded by theano_shim, in which case 'sandbox' might not have been imported
+            import theano.sandbox.rng_mrg
+            return theano.sandbox.rng_mrg
+    else:
+        raise RuntimeError("Tried to access theano.sandbox, but Theano has not been loaded.")
 
 def make_32bit_var(module, var):
     """
@@ -113,7 +124,7 @@ class Config(metaclass=Singleton):
     symbolic_updates = OrderedDict()
         # Stores a Theano update dictionary
 
-    RandomStreams = None
+    RandomStream = None
 
     # TerminatingTypes is a tuple of all types which may be iterable but
     # are treated as a single unit. This is used when recursively expanding
@@ -153,7 +164,7 @@ class Config(metaclass=Singleton):
             Random variables
         """
         if 'theano' not in sys.modules: return ()
-        else: return _gettheano().gof.graph.Variable
+        else: return _gettheano().graph.basic.Variable
     # For Theano, the expression type is just the generic symbolic type
     SymbolicExpressionType = SymbolicType
     @property
@@ -167,7 +178,7 @@ class Config(metaclass=Singleton):
             Random variables
         """
         if 'theano' not in sys.modules: return ()
-        else: return (self.SymbolicType, self.SymbolicRNGType)
+        else: return (self.SymbolicType, *self.SymbolicRNGTypes)
     @property
     def ShimmedAndGraphTypes(self):
         """
@@ -204,7 +215,7 @@ class Config(metaclass=Singleton):
             Tensor constants
         """
         if 'theano' not in sys.modules: return ()
-        else: return _gettheano().gof.Constant
+        else: return _gettheano().graph.basic.Constant
     # @property
     # def TensorConstantType(self):
     #   """
@@ -251,20 +262,27 @@ class Config(metaclass=Singleton):
         else:
             return (Number,)
     @property
-    def SymbolicRNGType(self):
+    def SymbolicNumpyRNGType(self):
         if 'theano' not in sys.modules: return ()
-        else: return _getT().shared_randomstreams.RandomStreams
+        else: return _getT().random.utils.RandomStream
+    @property
+    def SymbolicMRGRNGType(self):
+        if 'theano' not in sys.modules: return ()
+        else: return _get_rng_mrg().MRG_RandomStream
+    @property
+    def SymbolicRNGTypes(self):
+        return (self.SymbolicMRGRNGType, self.SymbolicNumpyRNGType)
     @property
     def RNGTypes(self):
         if 'theano' in sys.modules:
-            return (_getT().shared_randomstreams.RandomStreams,
+            return (self.SymbolicRNGTypes,
                     np.random.Generator, np.random.RandomState)
         else:
             return (np.random.Generator, np.random.RandomState)
     @property
     def RandomStateType(self):
         if 'theano' not in sys.modules: return ()
-        else: return _getT().shared_randomstreams.RandomStateSharedVariable
+        else: return _getT().random.var.RandomStateSharedVariable
     @property
     def CompiledType(self):
         if 'theano' not in sys.modules:
