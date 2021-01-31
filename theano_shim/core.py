@@ -25,7 +25,7 @@ Pointers for writing theano switches
     + isinstance(x, theano.tensor.TensorVariable) will be True when
       x is a theano variable, but False for wrappers around Python
       objects such as shared variables.
-    + isinstance(x, theano.gof.Variable) is more inclusive, returning
+    + isinstance(x, theano.graph.basic.Variable) is more inclusive, returning
       True for shared variables as well.
     + These two tests are provided by the `is_theano_variable` and
       `is_theano_object` convenience methods.
@@ -106,23 +106,29 @@ def load(library='theano', reraise=False):
         import theano.tensor as T
         import theano.tensor.signal.conv
         import theano.sparse
-        import theano.tensor.shared_randomstreams  # CPU only
-        import theano.sandbox.rng_mrg
-        #from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams  # CPU & GPU
+        import theano.sandbox
+        #import theano.tensor.shared_RandomStream  # CPU only
+        # from theano.tensor.random.utils import RandomStream
+        # import theano.sandbox.rng_mrg
+        from theano.sandbox.rng_mrg import MRG_RandomStream as RandomStream  # CPU & GPU
+        # The theano-pymc docs now recommend MRG_RandomStream, and that seems
+        # to be where the development effort is. For example,
+        # `RandomStream().binomial(n=1, p=0.9)` fails with “unknown keyword argument 'n'
+        # but `MRG_RandomStream().binomial(n=1, p=0.9)` works fine
 
         cf.add_terminating_types((T.TensorType, T.TensorVariable))
 
         cf.inf = 1e12
-        # cf.RandomStreams = theano.tensor.shared_randomstreams.RandomStreams
-        cf.RandomStreams = \
-            make_TheanoRNG(theano.tensor.shared_randomstreams.RandomStreams)
+        # cf.RandomStream = \
+        #     make_TheanoRNG(theano.tensor.shared_RandomStream.RandomStream)
+        cf.RandomStream = RandomStream
 
         # if cf.sys.version_info.minor >= 5:
         #     cf.Numeric = cf.Union[np.ndarray, T.TensorVariable]
 
     else:
         cf.inf = np.inf
-        cf.RandomStreams = NumpyRNG
+        cf.RandomStream = NumpyRNG
 
         # if cf.sys.version_info.minor >= 5:
         #     cf.Numeric = cf.Union[np.ndarray]
@@ -319,7 +325,7 @@ def print(x, message=None, printfn='print', message_prefix="SHIM - ",
         elif printfn == 'eval':
             try:
                 val = x.eval()
-            except theano.gof.fg.MissingInputError:
+            except theano.graph.fg.MissingInputError:
                 return theano.printing.Print(msg, global_fn=_get_print_fn(file))(x)
             else:
                 builtins.print(msg + " Value of {}: {}".format(str(x), val))
@@ -385,7 +391,7 @@ def check(stmt):
         - If it is 'off', `check` is a no-op
         - Otherwise, use the test values to evaluate the assert
     """
-    if not cf.use_theano or not isinstance(stmt, theano.gof.Variable):
+    if not cf.use_theano or not isinstance(stmt, theano.graph.basic.Variable):
         assert(stmt)
     else:
         if theano.config.compute_test_value == 'off':
@@ -404,7 +410,7 @@ def get_test_value(var, nofail=False):
     """
     if 'theano' in sys.modules and isinstance(var, _getT().sharedvar.SharedVariable):
         retval = var.get_value()
-    elif 'theano' in sys.modules and isinstance(var, _gettheano().gof.Variable):
+    elif 'theano' in sys.modules and isinstance(var, _gettheano().graph.basic.Variable):
         try:
             retval = var.tag.test_value
         except AttributeError:
@@ -448,7 +454,7 @@ def istype(obj, type_str):
     type_str = [str(ts) for ts in type_str]
     # Check type
     if ('theano' not in sys.modules
-        or not isinstance(obj, _gettheano().gof.Variable)):
+        or not isinstance(obj, _gettheano().graph.basic.Variable)):
         return any(ts in str(np.asarray(obj).dtype) for ts in type_str)
             # We cast to string to be consistent with Theano, which uses
             # strings for it's dtypes
@@ -463,12 +469,12 @@ def _expand_args(arglst):
     if not isinstance(arglst, Iterable):
         arglst = [arglst]
     elif ('theano' in sys.modules
-          and isinstance(arglst, _gettheano().gof.Variable)):
+          and isinstance(arglst, _gettheano().graph.basic.Variable)):
         arglst = [arglst]
     elif isinstance(arglst, cf.TerminatingTypes):
         arglst = [arglst]
     for arg in arglst:
-        if 'theano' in sys.modules and isinstance(arg, _gettheano().gof.Variable):
+        if 'theano' in sys.modules and isinstance(arg, _gettheano().graph.basic.Variable):
             # Theano variables aren't iterable
             yield arg
         elif isinstance(arg, cf.TerminatingTypes):
@@ -494,7 +500,7 @@ def _expand_args(arglst):
             yield arg
 
 def is_graph_object(*obj):
-    # return 'theano' in sys.modules and any(isinstance(o, _gettheano().gof.Variable)
+    # return 'theano' in sys.modules and any(isinstance(o, _gettheano().graph.basic.Variable)
     return 'theano' in sys.modules and any(isinstance(o, cf.GraphTypes)
                                  for o in _expand_args(obj))
 is_theano_object = is_graph_object
@@ -654,7 +660,7 @@ def asarray(x, dtype=None, broadcastable=None, symbolic=None):
         `config.use_theano` is False.
     """
 
-    _symbolic = 'theano' in sys.modules and isinstance(x, _gettheano().gof.Variable)
+    _symbolic = 'theano' in sys.modules and isinstance(x, _gettheano().graph.basic.Variable)
     if symbolic is None:
         symbolic = _symbolic
     elif symbolic is False and _symbolic is True:
@@ -726,7 +732,7 @@ def isspsparse(var):
         return sp.sparse.issparse(var)
 
 def flatten(x, outdim=1):
-    if 'theano' in sys.modules and isinstance(x, theano.gof.Variable):
+    if 'theano' in sys.modules and isinstance(x, theano.graph.basic.Variable):
         return T.flatten(x, outdim)
     else:
         outshape = x.shape[:outdim-1] + (np.prod(x.shape[outdim-1:]), )
@@ -774,7 +780,7 @@ def largest(*args):
     assert(len(args) >= 0)
     if len(args) == 1:
         return args[0]
-    if 'theano' in sys.modules and any(isinstance(arg, _gettheano().gof.Variable) for arg in args):
+    if 'theano' in sys.modules and any(isinstance(arg, _gettheano().graph.basic.Variable) for arg in args):
         return _getT().largest(*args)
     else:
         retval = np.maximum(args[0], args[1])
@@ -787,7 +793,7 @@ def smallest(*args):
     assert(len(args) > 0)
     if len(args) == 0:
         return args[0]
-    if 'theano' in sys.modules and any(isinstance(arg, _gettheano().gof.Variable) for arg in args):
+    if 'theano' in sys.modules and any(isinstance(arg, _gettheano().graph.basic.Variable) for arg in args):
         return _getT().smallest(*args)
     else:
         retval = np.minimum(args[0], args[1])
@@ -796,7 +802,7 @@ def smallest(*args):
         return retval
 
 def abs(x):
-    if 'theano' in sys.modules and isinstance(x, _gettheano().gof.Variable):
+    if 'theano' in sys.modules and isinstance(x, _gettheano().graph.basic.Variable):
         if x.ndim == 2:
             return __builtins__['abs'](x)
         else:
@@ -810,32 +816,32 @@ def abs(x):
 # Logical and comparison operators
 
 def lt(a, b):
-    if (cf.use_theano and (isinstance(a, theano.gof.Variable)
-                        or isinstance(b, theano.gof.Variable))):
+    if (cf.use_theano and (isinstance(a, theano.graph.basic.Variable)
+                        or isinstance(b, theano.graph.basic.Variable))):
         return T.lt(a, b)
     else:
         return a < b
 def le(a, b):
-    if (cf.use_theano and (isinstance(a, theano.gof.Variable)
-                        or isinstance(b, theano.gof.Variable))):
+    if (cf.use_theano and (isinstance(a, theano.graph.basic.Variable)
+                        or isinstance(b, theano.graph.basic.Variable))):
         return T.le(a, b)
     else:
         return a <= b
 def gt(a, b):
-    if (cf.use_theano and (isinstance(a, theano.gof.Variable)
-                        or isinstance(b, theano.gof.Variable))):
+    if (cf.use_theano and (isinstance(a, theano.graph.basic.Variable)
+                        or isinstance(b, theano.graph.basic.Variable))):
         return T.gt(a, b)
     else:
         return a > b
 def ge(a, b):
-    if (cf.use_theano and (isinstance(a, theano.gof.Variable)
-                        or isinstance(b, theano.gof.Variable))):
+    if (cf.use_theano and (isinstance(a, theano.graph.basic.Variable)
+                        or isinstance(b, theano.graph.basic.Variable))):
         return T.ge(a, b)
     else:
         return a >= b
 def eq(a, b):
-    if (cf.use_theano and (isinstance(a, theano.gof.Variable)
-                        or isinstance(b, theano.gof.Variable))):
+    if (cf.use_theano and (isinstance(a, theano.graph.basic.Variable)
+                        or isinstance(b, theano.graph.basic.Variable))):
         return T.eq(a, b)
     else:
         return a == b
@@ -860,8 +866,8 @@ def and_(a, b):
         return bool(bool(a) * bool(b))
 
     # matrix function
-    if ('theano' in sys.modules and (isinstance(a, _gettheano().gof.Variable)
-                                or isinstance(b, _gettheano().gof.Variable))):
+    if ('theano' in sys.modules and (isinstance(a, _gettheano().graph.basic.Variable)
+                                or isinstance(b, _gettheano().graph.basic.Variable))):
         return _getT().and_(a, b)
     else:
         return np.logical_and(a, b)
@@ -872,8 +878,8 @@ def or_(a, b):
         return bool(bool(a) + bool(b))
 
     # matrix function
-    if ('theano' in sys.modules and (isinstance(a, _gettheano().gof.Variable)
-                                or isinstance(b, _gettheano().gof.Variable))):
+    if ('theano' in sys.modules and (isinstance(a, _gettheano().graph.basic.Variable)
+                                or isinstance(b, _gettheano().graph.basic.Variable))):
         return _getT().or_(a, b)
     else:
         return np.logical_or(a, b)
@@ -914,9 +920,9 @@ def ifelse(condition, then_branch, else_branch, name=None, outshape=None):
     # Now the actual function
     if (cf.use_theano
         and not isinstance(condition, builtins.bool)
-        and (isinstance(condition, theano.gof.Variable)
-             or isinstance(then_branch, theano.gof.Variable)
-             or isinstance(else_branch, theano.gof.Variable))):
+        and (isinstance(condition, theano.graph.basic.Variable)
+             or isinstance(then_branch, theano.graph.basic.Variable)
+             or isinstance(else_branch, theano.graph.basic.Variable))):
         # Theano function
         if isinstance(then_branch, LazyEval):
             then_branch = then_branch.eval()
@@ -946,9 +952,9 @@ def switch(cond, ift, iff):
     For the equivalent to the single-argument version of `np.where`,
     see `nonzero`.
     """
-    if (cf.use_theano and (isinstance(cond, theano.gof.Variable)
-                        or isinstance(ift, theano.gof.Variable)
-                        or isinstance(iff, theano.gof.Variable))):
+    if (cf.use_theano and (isinstance(cond, theano.graph.basic.Variable)
+                        or isinstance(ift, theano.graph.basic.Variable)
+                        or isinstance(iff, theano.graph.basic.Variable))):
         return T.switch(cond, ift, iff)
     else:
         return np.where(cond, ift, iff)
@@ -998,6 +1004,11 @@ def scan(fn, sequences=None, outputs_info=None, non_sequences=None, n_steps=None
 # Random number generation
 
 class NumpyRNG(np.random.RandomState):
+    """
+    Note: For compatibility with Theano random streams, `size=None` is
+          replaced with `size=()`, which returns a scalar array instead of
+          a plain float.
+    """
     # We inherit from the legacy RNG because that's what Theano uses.
     # def __init__(self, seed=None):
     #     self.seed(seed)
@@ -1005,13 +1016,13 @@ class NumpyRNG(np.random.RandomState):
     # def seed(self, seed=None):
     #     np.random.seed(seed)
     #
-    def normal(self, size=None, avg=0.0, std=1.0, ndim=None, name=None):
+    def normal(self, size=(), avg=0.0, std=1.0, ndim=None, name=None):
         return super().normal(loc=avg, scale=std, size=size)
 
-    def uniform(self, size=None, low=0.0, high=1.0, ndim=None, name=None):
+    def uniform(self, size=(), low=0.0, high=1.0, ndim=None, name=None):
         return super().uniform(low, high, size)
 
-    def binomial(self, size=None, n=1, p=0.5, ndim=None, name=None):
+    def binomial(self, size=(), n=1, p=0.5, ndim=None, name=None):
         return super().binomial(n, p, size)
 
     @property
@@ -1019,6 +1030,10 @@ class NumpyRNG(np.random.RandomState):
         return self
 
 def make_TheanoRNG(rng_class):
+    """
+    This function is deprecated if you can import `RandomStream` from
+    `theano.tensor.random.utils`.
+    """
     def add_kwarg_name(f):
         def wrapper(self, *args, **kwargs):
             name = kwargs.pop('name', None)
@@ -1052,8 +1067,8 @@ def copy_random_state(from_rng, to_rng):
 
     Parameters
     ----------
-    from:  theano RandomStreams | MRG_RandomStreams
-    to: theano RandomStreams | MRG_RandomStreams
+    from:  theano RandomStream | MRG_RandomStream
+    to: theano RandomStream | MRG_RandomStream
     """
     # Based on a function defined in the Theano docs: http://deeplearning.net/software/theano/tutorial/examples.html#copying-random-state-between-theano-graphs
     # Ensure the two RNGs are of the same type
@@ -1064,7 +1079,7 @@ def copy_random_state(from_rng, to_rng):
     assert all(str(su1[1]) == str(su2[1])
                for su1, su2 in zip(from_rng.state_updates,
                                    to_rng.state_updates))
-    if isinstance(from_rng, _gettheano().sandbox.rng_mrg.MRG_RandomStreams):
+    if isinstance(from_rng, _get_rng_mrg().MRG_RandomStream):
         to_rng.rstate = from_rng.rstate
     for (su1, su2) in zip(from_rng.state_updates, to_rng.state_updates):
         su2[0].set_value(su1[0].get_value())
@@ -1272,8 +1287,8 @@ def shared(value, name=None, strict=False, allow_downcast=None, symbolic=True,
 ######################
 # Interchangeable set_subtensor
 def set_subtensor(x, y, inplace=False, tolerate_aliasing=False):
-    if 'theano' in sys.modules and (isinstance(x, _gettheano().gof.Variable)
-                                    or isinstance(y, _gettheano().gof.Variable)):
+    if 'theano' in sys.modules and (isinstance(x, _gettheano().graph.basic.Variable)
+                                    or isinstance(y, _gettheano().graph.basic.Variable)):
         return _getT().set_subtensor(x, y, inplace, tolerate_aliasing)
     else:
         assert x.base is not None
@@ -1283,8 +1298,8 @@ def set_subtensor(x, y, inplace=False, tolerate_aliasing=False):
         return x.base
 
 def inc_subtensor(x, y, inplace=False, tolerate_aliasing=False):
-    if 'theano' in sys.modules and (isinstance(x, _gettheano().gof.Variable)
-                                    or isinstance(y, _gettheano().gof.Variable)):
+    if 'theano' in sys.modules and (isinstance(x, _gettheano().graph.basic.Variable)
+                                    or isinstance(y, _gettheano().graph.basic.Variable)):
         return T.inc_subtensor(x, y, inplace, tolerate_aliasing)
     else:
         assert x.base is not None
@@ -1295,7 +1310,7 @@ def inc_subtensor(x, y, inplace=False, tolerate_aliasing=False):
 
 # TODO: Deprecate: numpy arrays have ndim
 def get_ndims(x):
-    if cf.use_theano and isinstance(x, theano.gof.Variable):
+    if cf.use_theano and isinstance(x, theano.graph.basic.Variable):
         return x.ndim
     else:
         return len(x.shape)

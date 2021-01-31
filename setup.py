@@ -3,11 +3,11 @@ from setuptools import setup
 
 setup(
       name='theano_shim',
-      version='0.2.3',
+      version='0.3.0dev',
       description="A simple interface to easily switch between using Theano and pure Numpy",
 
       author="Alexandre René",
-      author_email="alexandre.rene@caesar.de",
+      author_email="alexandre.rene@freeneurons.ca",
 
       license='MIT',
 
@@ -20,5 +20,5 @@ setup(
 
       packages=["theano_shim"],
 
-      install_requires=['numpy', 'scipy']
+      install_requires=['numpy', 'scipy', 'theano-pymc']
      )

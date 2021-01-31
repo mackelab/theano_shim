@@ -18,8 +18,8 @@ class _MissingInputError(Exception):
 MissingInputError = _MissingInputError
 def load_exceptions():
     if cf.use_theano:
-        import theano.gof as gof
-        MissingInputError = gof.MissingInputError
+        import theano.graph.fg as fg
+        MissingInputError = fg.MissingInputError
     else:
         MissingInputError = _MissingInputError
 
@@ -33,7 +33,8 @@ def reload():
         GraphExpressionMeta = type
     elif cf.library == 'theano':
         GraphExpression = get_TheanoGraphExpression()
-        GraphExpressionMeta = core.gettheano().gof.utils.MetaObject
+        # GraphExpressionMeta = core.gettheano().graph.utils.MetaObject
+        GraphExpressionMeta = core.gettheano().graph.utils.MetaType
     else:
         assert False
 
@@ -57,7 +58,7 @@ class ShimmedGraphExpression:
 def get_TheanoGraphExpression():
     if get_TheanoGraphExpression.TGE is None:
         theano = core.gettheano()
-        class TheanoGraphExpression(theano.gof.graph.Variable,
+        class TheanoGraphExpression(theano.graph.basic.Variable,
                                     theano.tensor._tensor_py_operators):
             """
             Mixin class to create a node a an computational graph representing
@@ -199,7 +200,8 @@ def eval(expr, givens=None, max_cost=10, if_too_costly='raise'):
     else:
         expr = [expr]
         expr_list = False
-    cost = len(core.gettheano().gof.graph.ancestors(expr)) / len(expr)
+    cost = sum(1 for x in core.gettheano().graph.basic.ancestors(expr)) / len(expr)
+       # `sum(1 for…` is a way of computing len with a generator
        # We take the mean because if a user passes a list, they
        # expect computation to scale with the number of terms
     if not expr_list:
@@ -300,15 +302,15 @@ def is_computable(varlist, with_inputs=None):
                 computable = False
                 break
         elif core.is_theano_variable(var): # Required because varlist may contain non-Theano objects
-            # if core.is_theano_variable( set(core.gettheano().gof.graph.inputs([var])).difference(with_inputs) ):
+            # if core.is_theano_variable( set(core.gettheano().graph.basic.graph_inputs([var])).difference(with_inputs) ):
             if core.is_theano_variable( set(pure_symbolic_inputs([var])).difference(with_inputs) ):
                 computable = False
                 break
     return computable
 
-def inputs(varlist, *args, **kwargs):
+def graph_inputs(varlist, *args, **kwargs):
     """
-    Wrapper for theano.gof.graph.inputs.
+    Wrapper for theano.graph.basic.graph_inputs.
     Returns an empty list for non symbolic variables
     """
     if isinstance(varlist, cf.GraphTypes):
@@ -318,29 +320,30 @@ def inputs(varlist, *args, **kwargs):
          or isinstance(varlist, str) ):
         raise ValueError("theano_shim.graph.inputs requires a list as first argument.")
     if core.is_theano_object(varlist):
-        return core._gettheano().gof.graph.inputs(varlist, *args, **kwargs)
+        return core._gettheano().graph.basic.graph_inputs(varlist, *args, **kwargs)
     else:
         return []
+inputs = graph_inputs  # Old Theano name; kept for BC with sinn
 
 def symbolic_inputs(varlist, *args, **kwargs):
-    return [v for v in inputs(varlist, *args, **kwargs) if core.is_symbolic(v)]
+    return [v for v in graph_inputs(varlist, *args, **kwargs) if core.is_symbolic(v)]
 
 def shared_inputs(varlist, *args, **kwargs):
-    return [v for v in inputs(varlist, *args, **kwargs)
+    return [v for v in graph_inputs(varlist, *args, **kwargs)
               if isinstance(v, cf.SymbolicSharedType)]
 
 def pure_symbolic_inputs(varlist, *args, **kwargs):
-    return [v for v in inputs(varlist, *args, **kwargs) if core.is_pure_symbolic(v)]
+    return [v for v in graph_inputs(varlist, *args, **kwargs) if core.is_pure_symbolic(v)]
 
-def variables(i, o=None):
+def vars_between(i, o=None):
     """
-    Wrapper for theano.gof.graph.variables.
+    Wrapper for theano.graph.variables.
     Returns an empty list for non symbolic variables
     If given only one argument, returns all variables it depends on.
     """
     if o is None:
         o = i
-        i = inputs(o)
+        i = graph_inputs(o)
     if isinstance(i, cf.GraphTypes):
         i = [i]
     if isinstance(o, cf.GraphTypes):
@@ -348,15 +351,16 @@ def variables(i, o=None):
     if ( not isinstance(i, collections.Iterable)
          or isinstance(i, str) ):
         raise ValueError(
-            "Arguments to theano_shim.graph.variables must be lists.")
+            "Arguments to theano_shim.graph.vars_between must be lists.")
     if core.is_theano_object(i, o):
-        return core._gettheano().gof.graph.variables(i, o)
+        return core._gettheano().graph.basic.vars_between(i, o)
     else:
         return []
+variables = vars_between  # Old Theano name; kept for BC with sinn
 
-def is_same_graph(var1, var2, givens=None, debug=False):
+def is_same_graph(var1, var2, givens=None):
     """
-    Wraps theano.gof.graph.is_same_graph().
+    Wraps theano.graph.toolbox.is_same_graph().
     Returns True if `var1` and `var2` perform the same computation.
     If either `var1` or `var2` is not a graph object, returns the result of
     `var1 == var2`.
@@ -364,5 +368,4 @@ def is_same_graph(var1, var2, givens=None, debug=False):
     if not (core.is_theano_object(var1) and core.is_theano_object(var2)):
         return var1 == var2
     else:
-        return core._gettheano().gof.graph.is_same_graph(var1, var2,
-                                                         givens, debug)
+        return core._gettheano().graph.toolbox.is_same_graph(var1, var2, givens)
