@@ -116,12 +116,14 @@ def load(library='theano', reraise=False):
         # `RandomStream().binomial(n=1, p=0.9)` fails with “unknown keyword argument 'n'
         # but `MRG_RandomStream().binomial(n=1, p=0.9)` works fine
 
+        from . import theano_types
+
         cf.add_terminating_types((T.TensorType, T.TensorVariable))
 
         cf.inf = 1e12
         # cf.RandomStream = \
         #     make_TheanoRNG(theano.tensor.shared_RandomStream.RandomStream)
-        cf.RandomStream = RandomStream
+        cf.RandomStream = theano_types.MRG_RNG
 
         # if cf.sys.version_info.minor >= 5:
         #     cf.Numeric = cf.Union[np.ndarray, T.TensorVariable]
@@ -1087,12 +1089,17 @@ def copy_random_state(from_rng, to_rng):
 def reseed_rng(rng, new_seed):
     """
     For Numpy legacy RandomState, just calls `rng.seed`.
+    For Numpy Generator, sets the state of the underlying `BitGenerator` as
+    though it had just been created with `BitGenerator(new_seed)`.
     For Theano, reseeds both the seeds of the current random streams, and
     the seed generator for future ones.
     """
     if isinstance(rng, np.random.RandomState):
         rng.seed(new_seed)
-    elif is_symbolic(rng):
+    elif isinstance(rng, np.random.Generator):
+        rng.bit_generator.state = type(rng.bit_generator)(new_seed).state
+    #elif is_symbolic(rng):
+    elif isinstance(rng, cf.SymbolicNumpyRNGType):
         # I don't know why Theano chose to create a throwaway seedgen inside `seed`,
         # but it means that set reliable seeds for both current and new RNG streams,
         # we need to emulate `gen_seedgen` being used to reseed the RNGs.
@@ -1104,6 +1111,15 @@ def reseed_rng(rng, new_seed):
         rng.gen_seedgen.seed(new_seed)
         for i in range(len(rng.state_updates)):
             rng.randint(2**30)
+    elif isinstance(rng, cf.SymbolicMRGRNGType):
+        from .theano_types import MRG_RNG
+        # Reset the rstate, and advance it as though it was
+        # used in `seed`.
+        rng.rstate = MRG_RNG(new_seed).rstate
+        for i in range(len(rng.state_updates)):
+            rng.randint(2**30)
+    else:
+        raise RuntimeError(f"Unrecognized RNG type; received {rng} (type: {type(rng)}).")
 
 ######################
 # Tensor constructors
