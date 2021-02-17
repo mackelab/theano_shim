@@ -1131,6 +1131,26 @@ def shape_to_broadcast(shape):
     """
     return tuple(n==1 for n in shape)
 
+def constant(x, name=None, ndim=None, dtype=None):
+    if cf.use_theano:
+        return _getT().constant(x, name=name, ndim=ndim, dtype=dtype)
+    else:
+        x_ = np.dtype(dtype).type(x)
+        if ndim is not None:
+            # Copied from theano.tensor.constant
+            if x_.ndim < ndim:
+                x_ = np.expand_dims(x_, axis=tuple(range(ndim - x_.ndim)))
+            elif x_.ndim > ndim:
+                try:
+                    x_ = np.squeeze(x_, axis=tuple(range(x_.ndim - ndim)))
+                except np.AxisError:
+                    raise ValueError(
+                        f"ndarray could not be cast to constant with {int(ndim)} dimensions"
+                    )
+
+            assert x_.ndim == ndim
+        return x_
+
 def tensor(object, name=None, dtype=None):
     """
     Make an object into a tensor. If `object` is a numpy array, a new tensor
