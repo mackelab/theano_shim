@@ -319,16 +319,16 @@ def print(x, message=None, printfn='print', message_prefix="SHIM - ",
             return slice(start, stop, step)
         msg = message_prefix + message
         if printfn == 'print':
-            return theano.printing.Print(msg, global_fn=_get_print_fn(file))(x)
+            return _gettheano().printing.Print(msg, global_fn=_get_print_fn(file))(x)
         elif printfn == 'debugprint':
             builtins.print(msg)
-            theano.printing.debugprint(x, file=file)
+            _gettheano().printing.debugprint(x, file=file)
             return x
         elif printfn == 'eval':
             try:
                 val = x.eval()
-            except theano.graph.fg.MissingInputError:
-                return theano.printing.Print(msg, global_fn=_get_print_fn(file))(x)
+            except _gettheano().graph.fg.MissingInputError:
+                return _gettheano().printing.Print(msg, global_fn=_get_print_fn(file))(x)
             else:
                 builtins.print(msg + " Value of {}: {}".format(str(x), val))
                 return x
