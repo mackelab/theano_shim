@@ -325,9 +325,9 @@ class Config(metaclass=Singleton):
     @property
     def compute_test_value(self):
         if 'theano' in sys.modules:
-            return _gettheano().config.copmute_test_value
+            return _gettheano().config.compute_test_value
         else:
-            return "Theano is not loaded"
+            return "off" # "Theano is not loaded"
 
     @compute_test_value.setter
     def compute_test_value(self, flag):

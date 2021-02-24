@@ -34,7 +34,7 @@ Pointers for writing theano switches
 import logging
 import builtins
 from collections import OrderedDict
-from collections.abc import Sequence, Iterable
+from collections.abc import Sequence, Iterable, Callable
 from numbers import Number
 import inspect
 import sys
@@ -175,14 +175,6 @@ class LazyEval:
         self.args = args
     def eval(self):
         return self.f(*self.args)
-
-##########################
-# Querying the computational graph
-# (Moved to graph.py)
-
-def is_computable(varlist, with_inputs=None):
-    logger.warning("Deprecation warning: theano_shim.graph.is_computable() is deprecated. "
-                   "Use theano_shim.graph.is_computable(). This test has NOT been executed.")
 
 ##########################
 # Managing theano updates
@@ -425,6 +417,23 @@ def get_test_value(var, nofail=False):
     else:
         retval = var
     return retval
+# TODO: Using the .get_test_value() method is likely better, when possible::
+# def get_test_value(expr):
+#     if cf.library == 'theano':
+#         return expr.get_test_value()
+#     elif cf.library == 'numpy':
+#         return expr
+#     else:
+#         raise NotImplementedError
+#     # if hasattr(x, 'tag') and hasattr(x.tag, 'test_value'):
+#     #     return x.tag.test_value
+#     # elif shim.isshared(x):
+#     #     return x.get_value()
+#     # elif shim.is_constant(x):
+#     #     return x.data
+#     # else:
+#     #     logger.warning(f"Unable to compute test value for {x}.")
+#     #     return None
 
 ######################
 # Type checking
@@ -1651,7 +1660,7 @@ def broadcast_to(array, shape, subok=False):
         return T.ones(shape) * array
     else:
         return np.broadcast_to(array, shape, subok)
-def copy(array, symbolic=False, name=None):
+def copy(array, symbolic=True, name=None):
     """
     NumPy `array`:
         Calls ``array.copy()``.
@@ -1676,9 +1685,21 @@ def copy(array, symbolic=False, name=None):
     >>> y in shim.graph.inputs(zsymb)  # True
     """
     if not is_theano_object(array):
-        return array.copy()
+        if hasattr(array, 'copy') and isinstance(array.copy, Callable):
+            return array.copy()
+        else:
+            return copymodule.copy(array)
     elif symbolic:
-        return array.copy(name=name)
+        # Theano's copy() doesn't copy tags, and therefore fails
+        # immediately if compute_test_value == 'raise'
+        # So we turn it off during the copy and add the test value ourselves
+        compute_test_value = cf.compute_test_value
+        cf.compute_test_value = 'off'
+        array_copied = array.copy(name=name)
+        if compute_test_value != 'off':
+            array_copied.tag.test_value = get_test_value(array)
+        cf.compute_test_value = compute_test_value
+        return array_copied
     else:
         c = copymodule.copy(array)
         if name is not None:

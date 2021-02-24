@@ -76,16 +76,18 @@ def get_TheanoGraphExpression():
                     # We actually just passed an expression
                     # Add a dummy entry to the graph, so we don't invalidate an
                     # existing variable
-                    expr = expr_or_type.copy()
-                        # .copy() creates a new node with for the 'identity'
-                        # operation and `expr_or_type` as only input.
-                        # This allows us to modify `expr` without
-                        # invalidating the variable that was passed as argument.
+
+                    expr = core.copy(expr_or_type, name=name)
+                        # Internally calls .copy() method, which creates a new
+                        # node with for the 'identity' operation and
+                        # `expr_or_type` as only input. This allows us to modify
+                        # `expr` without invalidating the variable that was
+                        # passed as argument.
                     type = expr.type
                     owner = expr.owner
                     index = expr.index
-                    if name is None:
-                        name = expr.name
+                    # if name is None:
+                    #     name = expr.name
                     # Point the parent graph to the new graph node
                     if owner is not None:
                         owner.outputs = [self if o is expr else o
@@ -106,7 +108,6 @@ def replace_expr(expr):
     # Point the parent graph to the new graph node
     owner.outputs = [self if o is expr else o for o in owner.outputs]
     return GraphExpression(type, owner, index, name)
-
 
 
 #####################
