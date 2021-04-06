@@ -17,6 +17,8 @@ class _MissingInputError(Exception):
     pass
 MissingInputError = _MissingInputError
 def load_exceptions():
+    "Called by `theano_shim.graph.load()`"
+    global MissingInputError
     if cf.use_theano:
         import theano.graph.fg as fg
         MissingInputError = fg.MissingInputError
