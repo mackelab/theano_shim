@@ -155,26 +155,31 @@ class LazyEval:
     Small wrapper to permit lazy evaluation of arguments.
     Python by default evaluates every argument being passed to a function,
     which can lead to problems e.g. when using ifelse as a guard:
-        a = ifelse( neq(x, 0), y/x, y )
+        a = ifelse( neq(x, 0),
+                    y/x,
+                    y )
     In this case we can rewrite the above as
-        a = ifelse( neq(x, 0), LazyEval(lambda x,y: y/x, (x,y)), y )
+        a = ifelse( neq(x, 0),
+                    LazyEval(lambda x,y: y/x, x, y),
+                    y )
 
     Current functions compatible with LazyEval:
         - ifelse
     """
-    def __init__(self, f, args=()):
+    def __init__(self, f, *args, **kwargs):
         """
         Parameters
         ----------
         f: callable
             An expression which returns the desired value
-        args: tuple
+        *args:
             The variables appearing in the function f.
         """
         self.f = f
         self.args = args
+        self.kwargs = kwargs
     def eval(self):
-        return self.f(*self.args)
+        return self.f(*self.args, **self.kwargs)
 
 ##########################
 # Managing theano updates
@@ -908,18 +913,22 @@ def ifelse(condition, then_branch, else_branch, name=None, outshape=None):
     to have a different shape: the output will be reshaped into this form, but
     only if Theano is used. The reason we need this is as follows:
     Suppose we have a vector x which should be reshaped to (2,2). We might write
-    (in pseudocode)
-    ifelse(x.shape == (2,),
-           concatenate((x, x)),
-           x.reshape((2,2)))
+    (in pseudocode)::
+
+        ifelse(x.shape == (2,),
+               concatenate((x, x)),
+               x.reshape((2,2)))
+
     The Python version of this code has no trouble, because the correct branch
     will always reshape to (2,2). However, the Theano version wants a result with
     a well defined shape. Here the branch with `concatenate((x,x))` won't in
     general have the same shape as `x.reshape((2,2))`.
-    We can get around this by defining outshape=(2,2) and writing instead
-    ifelse(x.shape == (2,),
-           concatenate((x, x)).reshape(outshape),
-           x.reshape((2,2)).reshape(outshape))
+    We can get around this by defining `outshape=(2,2)` and writing instead::
+
+        ifelse(x.shape == (2,),
+               concatenate((x, x)).reshape(outshape),
+               x.reshape((2,2)).reshape(outshape))
+
     Now this makes Theano happy, but Python with its greedy evaluation
     evaluates both arguments before calling ifelse. So if x.shape=(2,2), the
     call will fail on `concatenate((x,x)).reshape(outshape)`. The solution
