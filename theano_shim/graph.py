@@ -125,6 +125,23 @@ def compile(inputs, outputs, *args, **kwargs):
         raise ValueError("`shim.graph.function()` is undefined for non-symbolic outputs")
     return core.theano.function(inputs, outputs, *args, **kwargs)
 
+def _recursive_as_variable(exprs):
+    """
+    Apply `asvariable` to a set of expressions. Recurses into:
+
+    - list
+    - tuple
+    - dict
+    """
+    if isinstance(exprs, list):
+        return [_recursive_as_variable(e) for e in exprs]
+    elif isinstance(exprs, tuple):
+        return tuple(_recursive_as_variable(e) for e in exprs)
+    elif isinstance(exprs, dict):
+        return {k: _recursive_as_variable(e) for k,e in exprs.items()}
+    else:
+        return core.asvariable(exprs)
+
 def eval(expr, givens=None, max_cost=10, if_too_costly='raise'):
     """
     Obtain a numerical value by evaluating an expression's graph.
@@ -198,17 +215,18 @@ def eval(expr, givens=None, max_cost=10, if_too_costly='raise'):
     # "Standard" code path
     if isinstance(expr, Iterable) and not isinstance(expr, cf.TerminatingTypes):
         assert all(isinstance(e, cf.TerminatingTypes) for e in expr)
-        expr = [core.asvariable(e) for e in expr]
-        expr_list = True
+        expr = _recursive_as_variable(expr)
+        # scalar_expr = False
+        list_of_exprs = [e for e in core._expand_args(expr) if core.is_symbolic(e)]
     else:
-        expr = [expr]
-        expr_list = False
-    cost = sum(1 for x in core.gettheano().graph.basic.ancestors(expr)) / len(expr)
+        list_of_exprs = [expr]
+        # scalar_expr = True
+    cost = sum(1 for x in core.gettheano().graph.basic.ancestors(list_of_exprs)) / len(list_of_exprs)
        # `sum(1 for…` is a way of computing len with a generator
        # We take the mean because if a user passes a list, they
        # expect computation to scale with the number of terms
-    if not expr_list:
-        expr = expr[0]
+    # if scalar_expr:
+    #     expr = expr[0]
     if max_cost is not None and cost > max_cost:
         if if_too_costly == 'raise':
             raise TooCostly("Expression has {} ancestors, which exceeds the "
@@ -224,11 +242,10 @@ def eval(expr, givens=None, max_cost=10, if_too_costly='raise'):
                 [], expr, givens=givens, on_unused_input='ignore')
         except MissingInputError:
             # Make the Theano error message more friendly and useful
-            symbinputs = (set(shim.graph.pure_symbolic_inputs(expr))
-                          - set(givens))
+            symbinputs = (set(pure_symbolic_inputs(list_of_exprs)) - set(givens))
             raise MissingInputError(
                 "You called `eval()` on a graph with pure symbolic inputs "
-                "(shared variables are fine) Provide values for these with "
+                "(i.e. non-shared symbolic inputs). Provide values for these with "
                 f"the `givens` parameter.\nProblematic inputs: {symbinputs}.")
         return f()
 
@@ -315,13 +332,10 @@ def graph_inputs(varlist, *args, **kwargs):
     """
     Wrapper for theano.graph.basic.graph_inputs.
     Returns an empty list for non symbolic variables
+    Accepts also nested lists and dictionaries; inputs will be combined into
+    one set.
     """
-    if isinstance(varlist, cf.GraphTypes):
-        # Wrap calls on single variables with a list
-        varlist = [varlist]
-    elif ( not isinstance(varlist, collections.Iterable)
-         or isinstance(varlist, str) ):
-        raise ValueError("theano_shim.graph.inputs requires a list as first argument.")
+    varlist = list(core._expand_args(varlist))
     if core.is_theano_object(varlist):
         return core._gettheano().graph.basic.graph_inputs(varlist, *args, **kwargs)
     else:
