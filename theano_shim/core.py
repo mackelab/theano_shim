@@ -479,6 +479,8 @@ def _expand_args(arglst):
     """
     if not isinstance(arglst, Iterable):
         arglst = [arglst]
+    elif isinstance(arglst, dict):
+        arglst = [arglst]
     elif ('theano' in sys.modules
           and isinstance(arglst, _gettheano().graph.basic.Variable)):
         arglst = [arglst]
