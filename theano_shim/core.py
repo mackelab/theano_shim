@@ -471,11 +471,11 @@ def istype(obj, type_str):
     # Check type
     if ('theano' not in sys.modules
         or not isinstance(obj, _gettheano().graph.basic.Variable)):
-        return any(ts in str(np.asarray(obj).dtype) for ts in type_str)
+        return builtins.any(ts in str(np.asarray(obj).dtype) for ts in type_str)
             # We cast to string to be consistent with Theano, which uses
             # strings for it's dtypes
     else:
-        return any(ts in obj.dtype for ts in type_str)
+        return builtins.any(ts in obj.dtype for ts in type_str)
 
 def _expand_args(arglst):
     """
@@ -518,8 +518,8 @@ def _expand_args(arglst):
             yield arg
 
 def is_graph_object(*obj):
-    # return 'theano' in sys.modules and any(isinstance(o, _gettheano().graph.basic.Variable)
-    return 'theano' in sys.modules and any(isinstance(o, cf.GraphTypes)
+    # return 'theano' in sys.modules and builtins.any(isinstance(o, _gettheano().graph.basic.Variable)
+    return 'theano' in sys.modules and builtins.any(isinstance(o, cf.GraphTypes)
                                  for o in _expand_args(obj))
 is_theano_object = is_graph_object
 def is_constant(*obj):
@@ -534,8 +534,8 @@ def is_pure_symbolic(*var):
     There seems to be some redundancy between ``is_pure_symbolic(x)``
     and ``not graph.is_computable(x)``.
     """
-    # return 'theano' in sys.modules and any(isinstance(v, _gettheano().tensor.TensorVariable)
-    return 'theano' in sys.modules and any(isinstance(v, cf.PureSymbolicTypes)
+    # return 'theano' in sys.modules and builtins.any(isinstance(v, _gettheano().tensor.TensorVariable)
+    return 'theano' in sys.modules and builtins.any(isinstance(v, cf.PureSymbolicTypes)
                                  for v in _expand_args(var))
 is_theano_variable = is_pure_symbolic
 def is_symbolic(*var):
@@ -545,15 +545,15 @@ def is_symbolic(*var):
         for v in _expand_args(var))
     issymbolic = is_symbolic  # With NumPy having no consistent convention, it's nigh to impossible to memorize, so just accept both
 def is_shimmed_or_symbolic(*var):
-    return any(isinstance(v, cf.ShimmedAndGraphTypes) for v in _expand_args(var))
+    return builtins.any(isinstance(v, cf.ShimmedAndGraphTypes) for v in _expand_args(var))
 def isshared(var):
     return isinstance(var, cf.SharedTypes)
 # def isshared(*var):
 #     if 'theano' in sys.modules:
-#         return any(isinstance(v, (cf.SymbolicSharedType, ShimmedTensorShared))
+#         return builtins.any(isinstance(v, (cf.SymbolicSharedType, ShimmedTensorShared))
 #                    for v in _expand_args(var))
 #     else:
-#         return any(isinstance(v, ShimmedTensorShared)
+#         return builtins.any(isinstance(v, ShimmedTensorShared)
 #                    for v in _expand_args(var))
 
 #######################
@@ -713,7 +713,7 @@ def asscalar(x):
         # shim.isscalar(x) returns True for 0-dim arrays
         return x
     elif is_theano_object(x):
-        if all(x.broadcastable):
+        if builtins.all(x.broadcastable):
             return T.flatten(x)[0]
         else:
             raise ValueError("To cast a Theano tensor as a scalar, "
@@ -798,7 +798,7 @@ def largest(*args):
     assert(len(args) >= 0)
     if len(args) == 1:
         return args[0]
-    if 'theano' in sys.modules and any(isinstance(arg, _gettheano().graph.basic.Variable) for arg in args):
+    if 'theano' in sys.modules and builtins.any(isinstance(arg, _gettheano().graph.basic.Variable) for arg in args):
         return _getT().largest(*args)
     else:
         retval = np.maximum(args[0], args[1])
@@ -811,7 +811,7 @@ def smallest(*args):
     assert(len(args) > 0)
     if len(args) == 0:
         return args[0]
-    if 'theano' in sys.modules and any(isinstance(arg, _gettheano().graph.basic.Variable) for arg in args):
+    if 'theano' in sys.modules and builtins.any(isinstance(arg, _gettheano().graph.basic.Variable) for arg in args):
         return _getT().smallest(*args)
     else:
         retval = np.minimum(args[0], args[1])
@@ -1098,7 +1098,7 @@ def copy_random_state(from_rng, to_rng):
     # Ensure that their state updates are consistent
     # `str(su1[1])` retrieves something like `RandomFunction{uniform}.1`
     assert len(from_rng.state_updates) == len(to_rng.state_updates)
-    assert all(str(su1[1]) == str(su2[1])
+    assert builtins.all(str(su1[1]) == str(su2[1])
                for su1, su2 in zip(from_rng.state_updates,
                                    to_rng.state_updates))
     if isinstance(from_rng, _get_rng_mrg().MRG_RandomStream):
@@ -1484,7 +1484,7 @@ def pad(array, array_shape, pad_width, mode='constant', **kwargs):
                 assert(isinstance(arg, (tuple, list)))
                 arg = arg * array.ndim
             assert(len(arg) == array.ndim)
-            assert(all(len(tup) == 2 for tup in arg))
+            assert(builtins.all(len(tup) == 2 for tup in arg))
             return arg
         pad_width = expand_arg(pad_width)
         if mode == 'constant':
@@ -1634,7 +1634,7 @@ load('numpy')
 def grad(expr, wrt, *args, **kwargs):
     if not isinstance(wrt, (list, tuple)):
         wrt = [wrt]
-    if not all(is_symbolic(w) for w in wrt):
+    if not builtins.all(is_symbolic(w) for w in wrt):
         raise TypeError("Gradient must be with respect to symbolic variables.")
     if not is_symbolic(expr):
         raise TypeError("Expression must be symbolic.")
@@ -1654,6 +1654,11 @@ def all(x):
         return T.all(x)
     else:
         return np.all(x)
+def any(x):
+    if is_theano_object(x):
+        return T.any(x)
+    else:
+        return np.any(x)
 def arange(start, stop=None, step=1, dtype=None, symbolic=None):
     _symb = is_theano_object(start, stop, step, dtype)
     if symbolic is None:
@@ -1717,7 +1722,7 @@ def copy(array, symbolic=True, name=None):
             c.name = name
         return c
 def concatenate(tensor_list, axis=0):
-    if any(is_theano_object(x) for x in tensor_list):
+    if builtins.any(is_theano_object(x) for x in tensor_list):
         return T.concatenate(tensor_list, axis)
     else:
         return np.concatenate(tensor_list, axis)
