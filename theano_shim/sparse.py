@@ -13,7 +13,12 @@ cf.add_terminating_types([sp.sparse.spmatrix])
 
 # TODO: move to core
 from functools import wraps
-def forcable_symbolic(f):
+def validate_symbolic_kwd(f):
+    """
+    For a function which accepts `symbolic` as keyword to force returning a
+    symbolic or numeric, verify that the option is compatible with the value.
+    (I.e. raise exception if symbolic=False and value is symbolic.)
+    """
     @wraps(f)
     def wrapper(*args, symbolic=None, **kwargs):
         _symbolic = is_graph_object(*args, *kwargs.values())
@@ -182,19 +187,19 @@ def csc_matrix(name, shape, dtype=None, symbolic=None):
 # ------------------------------------
 # Theano interface for sparse matrices
 
-@forcable_symbolic
+@validate_symbolic_kwd
 def csr_from_dense(x, symbolic=None):
     if symbolic:
         return _gettheano().sparse.csr_from_dense(x)
     else:
         return csr_matrix_wrapper(x)
-@forcable_symbolic
+@validate_symbolic_kwd
 def csc_from_dense(x, symbolic=False):
     if symbolic:
         return _gettheano().sparse.csc_from_dense(x)
     else:
         return csc_matrix_wrapper(x)
-@forcable_symbolic
+@validate_symbolic_kwd
 def dense_from_sparse(x, symbolic=False):
     """
     Returns an array.
@@ -206,13 +211,13 @@ def dense_from_sparse(x, symbolic=False):
     else:
         return x.todense().A
 
-@forcable_symbolic
+@validate_symbolic_kwd
 def CSR(data, indices, indptr, shape, symbolic=False):
     if symbolic:
         return _gettheano().sparse.CSR(data, indices, indptr, shape)
     else:
         return csr_matrix_wrapper((data, indices, indptr), shape)
-@forcable_symbolic
+@validate_symbolic_kwd
 def CSC(data, indices, indptr, shape, symbolic=False):
     if symbolic:
         return _gettheano().sparse.CSC(data, indices, indptr, shape)

@@ -513,7 +513,14 @@ def _expand_args(arglst):
             else:
                 yield from _expand_args(arg)
         elif isinstance(arg, Iterable):
-            yield from _expand_args(arg)
+            try:
+                yield from _expand_args(arg)
+            except TypeError:
+                # Pint objects with scalars report 'iterable' but then fail
+                # on __iter__. Might be the case with other objects as well.
+                # For Pint, see https://github.com/hgrecco/pint-pandas/issues/33#issuecomment-647198749
+                # Should be fixed by this currently open PR https://github.com/hgrecco/pint/pull/1125
+                yield arg
         else:
             yield arg
 
@@ -543,7 +550,7 @@ def is_symbolic(*var):
         isinstance(v, cf.GraphTypes)
         and not isinstance(v, cf.ConstantTypes)
         for v in _expand_args(var))
-    issymbolic = is_symbolic  # With NumPy having no consistent convention, it's nigh to impossible to memorize, so just accept both
+issymbolic = is_symbolic  # With NumPy having no consistent convention, it's nigh to impossible to memorize, so just accept both
 def is_shimmed_or_symbolic(*var):
     return builtins.any(isinstance(v, cf.ShimmedAndGraphTypes) for v in _expand_args(var))
 def isshared(var):
