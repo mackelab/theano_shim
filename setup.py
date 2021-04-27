@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
       name='theano_shim',
-      version='0.3.0dev',
+      version='0.3.0',
       description="A simple interface to easily switch between using Theano and pure Numpy",
 
       author="Alexandre René",
