@@ -1128,7 +1128,7 @@ def reseed_rng(rng, new_seed):
     #elif is_symbolic(rng):
     elif isinstance(rng, cf.SymbolicNumpyRNGType):
         # I don't know why Theano chose to create a throwaway seedgen inside `seed`,
-        # but it means that set reliable seeds for both current and new RNG streams,
+        # but it means that to set reliable seeds for both current and new RNG streams,
         # we need to emulate `gen_seedgen` being used to reseed the RNGs.
         # `rng.seed` reseeds existing RNG streams, calling `seedgen.randint(2**30)`
         # as many times as there are RNG streams
@@ -1140,11 +1140,14 @@ def reseed_rng(rng, new_seed):
             rng.randint(2**30)
     elif isinstance(rng, cf.SymbolicMRGRNGType):
         from .theano_types import MRG_RNG
-        # Reset the rstate, and advance it as though it was
-        # used in `seed`.
-        rng.rstate = MRG_RNG(new_seed).rstate
-        for i in range(len(rng.state_updates)):
-            rng.randint(2**30)
+        # Reset the rstate
+        rng.seed(new_seed)
+        # rng.rstate = MRG_RNG(new_seed).rstate
+        # TODO: Check whether we need to advance the state as we do with
+        # with SymbolicNumpyRNGType (code below can't work: MRG_RNG does not
+        # define randint)
+        # for i in range(len(rng.state_updates)):
+        #     rng.randint(2**30)
     else:
         raise RuntimeError(f"Unrecognized RNG type; received {rng} (type: {type(rng)}).")
 

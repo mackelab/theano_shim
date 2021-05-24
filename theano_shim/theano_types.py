@@ -47,6 +47,17 @@ class MRG_RNG(theano.sandbox.rng_mrg.MRG_RandomStream):
                 assert seed <= np.iinfo(np.uint64).max
                 seed = [seed % M2 + 1, seed // M2 // M2 + 1, 0, (seed // M2) % M2, 0, 0]
             return seed
+            
+    def seed(self, seed=None):
+        """
+        Wrapper around Theano's MRG_RandomStream.seed, which accepts any 64-bit
+        integer (MRG_RandomStream.seed only accepts integers about half of int32).
+        
+        This function does not simply truncate the integer, but rather places
+        the additional bits in other components of the RNG's 6-d state vector.
+        Each integer thus corresponds to a unique state.
+        """
+        super().seed(self.normalize_seed(seed))
 
 # import numpy as np
 # seed = np.iinfo(np.uint64).max
