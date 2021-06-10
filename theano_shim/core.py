@@ -802,8 +802,9 @@ def addbroadcast(x, *axes):
 
 def largest(*args):
     """Element-wise max operation."""
-    assert(len(args) >= 0)
-    if len(args) == 1:
+    if len(args) == 0:
+        raise TypeError("`largest` expects at least one argument.")
+    elif len(args) == 1:
         return args[0]
     if 'theano' in sys.modules and builtins.any(isinstance(arg, _gettheano().graph.basic.Variable) for arg in args):
         return _getT().largest(*args)
@@ -815,8 +816,9 @@ def largest(*args):
 
 def smallest(*args):
     """Element-wise min operation."""
-    assert(len(args) > 0)
     if len(args) == 0:
+        raise TypeError("`smallest` expects at least one argument.")
+    if len(args) == 1:
         return args[0]
     if 'theano' in sys.modules and builtins.any(isinstance(arg, _gettheano().graph.basic.Variable) for arg in args):
         return _getT().smallest(*args)
