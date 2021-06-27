@@ -142,7 +142,7 @@ def _recursive_as_variable(exprs):
     else:
         return core.asvariable(exprs)
 
-def eval(expr, givens=None, max_cost=10, if_too_costly='raise'):
+def eval(expr, givens=None, max_cost=20, if_too_costly='raise'):
     """
     Obtain a numerical value by evaluating an expression's graph.
 
@@ -157,17 +157,23 @@ def eval(expr, givens=None, max_cost=10, if_too_costly='raise'):
        should avoid using `eval` too liberally, as the compilation times can
        add up.
 
-       The default value of ``10`` is meant for negligible cost evaluations
+       The default value of ``20`` is meant for negligible cost evaluations
        – things like retrieving a shared value, or evaluating an arithmetic
        expression involving constants. Thus calling `eval` without extra
-       arguments amounts to a cheap "remove the symbolic container" call and
-       can be done whenever needed.
+       arguments amounts to a (relatively) cheap "remove the symbolic container"
+       call and can be done fairly often needed. Even in this case though, 
+       there remains some measurable overhead associated with the compilation
+       and compile cache lookup.
 
        For sanity checks, it probably doesn't make sense to spend too much
        time computing a graph that will never be used in an actual computation.
        The best approach is usually to keep `max_cost` low (30 may be a
        reasonable value) and silence the ``TooCostly`` exception::
 
+           shim.eval(my_test, max_cost=30, if_too_costly='ignore')
+           
+       or::
+       
            try:
                shim.eval(my_test, max_cost=30)
            except shim.graph.TooCostly:
@@ -179,23 +185,23 @@ def eval(expr, givens=None, max_cost=10, if_too_costly='raise'):
 
     Parameters
     ----------
-    expr: Theano graph | slice | iterable (TODO)
+    expr: Theano graph | slice | iterable
         The theano expression we want to evaluate. If a slice, each component
         of the slice ('start', 'stop', 'step') is evaluated.
         TODO: iterable
     givens: dict (optional; default: {})
         Dictionary of inputs to be past to `eval`.
-    max_cost: int (optional; default: 10)
+    max_cost: int (optional; default: 20)
         Maximum allowable 'cost' of the expression: if `expr` is estimated to
         be more costly than this, an error is raised instead. The value `None`
         deactivates this check.
         Cost is estimated by a proxy, specifically the number of ancestors to
-        `expr` in the Theano graph. By default, only expressions with 10 ancestors
-        or less are evaluated.
+        `expr` in the Theano graph. By default, only expressions with 20
+        ancestors or less are evaluated.
     if_too_costly: 'ignore'  |  'raise'
         What to do if an expression is too costly to compute.
         'ignore': do nothing, return symbolic expression.
-        'raise' : raise a TooCostly exception.
+        'raise' : (default) raise a `~shim.graph.TooCostly` exception.
 
     Returns
     -------

@@ -1688,6 +1688,11 @@ def broadcast_to(array, shape, subok=False):
         return T.ones(shape) * array
     else:
         return np.broadcast_to(array, shape, subok)
+def choose(a, choices, out=None, mode='raise'):
+    if is_theano_object(a, choices):
+        return T.choose(a, choices, out, mode)
+    else:
+        return np.choose(a, choices, out, mode)
 def copy(array, symbolic=True, name=None):
     """
     NumPy `array`:
@@ -1829,8 +1834,11 @@ def nonzero(x):
         return T.nonzero(x)
     else:
         return np.nonzero(x)
-def ones(shape, dtype=None):
-    if is_theano_object(shape):
+def ones(shape, dtype=None, symbolic=None):
+    ":param:symbolic: Always return symbolic tensor, if symbolic lib is loaded."
+    if config.library == 'numpy':
+        symbolic = False
+    if is_theano_object(shape) or symbolic:
         return T.ones(shape, dtype)
     else:
         return np.ones(shape, dtype)
@@ -1887,8 +1895,11 @@ def tile(x, reps, ndim=None):
         return T.tile(x, reps, ndim)
     else:
         return np.tile(x, reps)
-def zeros(shape, dtype=None):
-    if is_theano_object(shape):
+def zeros(shape, dtype=None, symbolic=None):
+    ":param:symbolic: Always return symbolic tensor, if symbolic lib is loaded."
+    if config.library == 'numpy':
+        symbolic = False
+    if is_theano_object(shape) or symbolic:
         return T.zeros(shape, dtype)
     else:
         return np.zeros(shape, dtype)
