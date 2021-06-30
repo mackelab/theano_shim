@@ -1683,6 +1683,11 @@ def arange(start, stop=None, step=1, dtype=None, symbolic=None):
         return T.arange(start, stop, step, dtype)
     else:
         return np.arange(start, stop, step, dtype)
+def bincount(x, weights=None, minlength=None, assert_nonneg=False):
+    if is_theano_object(x, weights):
+        return T.bincount(x, weights, minlength, assert_nonneg)
+    else:
+        return np.bincount(x, weights, minlength)
 def broadcast_to(array, shape, subok=False):
     if is_theano_object(array, shape):
         return T.ones(shape) * array

@@ -131,7 +131,7 @@ class Config(metaclass=Singleton):
     # an argument in core._expand_args.
     # For example, if the sparse module is loaded, sparse types are added to TerminatingTypes,
     # since we will never store a Theano object as an element of a SciPy sparse matrix
-    _TerminatingTypes = (bytes,str,np.ndarray)
+    _TerminatingTypes = (bytes,str,np.number,np.ndarray)
 
     def add_terminating_types(self, type_list):
         self._TerminatingTypes = tuple( set(type_list).union( self._TerminatingTypes ) )

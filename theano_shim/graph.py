@@ -63,7 +63,7 @@ def get_TheanoGraphExpression():
         class TheanoGraphExpression(theano.graph.basic.Variable,
                                     theano.tensor._tensor_py_operators):
             """
-            Mixin class to create a node a an computational graph representing
+            Mixin class to create a node as an computational graph representing
             a variable or expression. (As opposed to an operation.)
 
             The initialization signature matches that of a graph node, allowing
@@ -341,11 +341,8 @@ def graph_inputs(varlist, *args, **kwargs):
     Accepts also nested lists and dictionaries; inputs will be combined into
     one set.
     """
-    varlist = list(core._expand_args(varlist))
-    if core.is_theano_object(varlist):
-        return core._gettheano().graph.basic.graph_inputs(varlist, *args, **kwargs)
-    else:
-        return []
+    varlist = [x for x in core._expand_args(varlist) if core.is_theano_object(x)]
+    return core._gettheano().graph.basic.graph_inputs(varlist, *args, **kwargs)
 inputs = graph_inputs  # Old Theano name; kept for BC with sinn
 
 def symbolic_inputs(varlist, *args, **kwargs):
