@@ -1735,7 +1735,10 @@ def copy(array, symbolic=True, name=None):
         cf.compute_test_value = 'off'
         array_copied = array.copy(name=name)
         if compute_test_value != 'off':
-            array_copied.tag.test_value = get_test_value(array)
+            try:
+                array_copied.tag.test_value = get_test_value(array)
+            except AttributeError:
+                pass
         cf.compute_test_value = compute_test_value
         return array_copied
     else:

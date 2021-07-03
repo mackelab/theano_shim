@@ -57,59 +57,26 @@ class ShimmedGraphExpression:
     pass
 
 # Wrapping in a function prevents defining the class before theano is loaded
+# NOTE: TheanoGraphExpression is an accumulation of patches. I'm still not 100%
+# sure of its necessity (although it at least seemed the most expedient solution
+# when it was created) and it is still not fully functional (in particular
+# when it comes to cloning).
 def get_TheanoGraphExpression():
-    if get_TheanoGraphExpression.TGE is None:
-        theano = core.gettheano()
-        class TheanoGraphExpression(theano.graph.basic.Variable,
-                                    theano.tensor._tensor_py_operators):
-            """
-            Mixin class to create a node as an computational graph representing
-            a variable or expression. (As opposed to an operation.)
+    if get_TheanoGraphExpression.GE is None:
+        from theano_shim.graph_theano import GraphExpression
+        get_TheanoGraphExpression.GE = GraphExpression
+    return get_TheanoGraphExpression.GE
+get_TheanoGraphExpression.GE = None
 
-            The initialization signature matches that of a graph node, allowing
-            internal graph functions such as `copy()` to work.
-            When mixing into another class, make sure this initialization signature
-            remains valid (reminder: multiple inheritance precedence goes left to right).
-
-            In addition to the default initialization,
-            """
-            def __init__(self, expr_or_type, owner=None, index=None, name=None):
-                if isinstance(expr_or_type, cf.SymbolicExpressionType):
-                    # We actually just passed an expression
-                    # Add a dummy entry to the graph, so we don't invalidate an
-                    # existing variable
-
-                    expr = core.copy(expr_or_type, name=name)
-                        # Internally calls .copy() method, which creates a new
-                        # node with for the 'identity' operation and
-                        # `expr_or_type` as only input. This allows us to modify
-                        # `expr` without invalidating the variable that was
-                        # passed as argument.
-                    type = expr.type
-                    owner = expr.owner
-                    index = expr.index
-                    # if name is None:
-                    #     name = expr.name
-                    # Point the parent graph to the new graph node
-                    if owner is not None:
-                        owner.outputs = [self if o is expr else o
-                                         for o in owner.outputs]
-                else:
-                    type = expr_or_type
-                super().__init__(type, owner, index, name)
-        get_TheanoGraphExpression.TGE = TheanoGraphExpression
-    return get_TheanoGraphExpression.TGE
-get_TheanoGraphExpression.TGE = None
-
-def replace_expr(expr):
-    type = expr.type
-    owner = expr.owner
-    index = expr.index
-    if name is None:
-        name = expr.name
-    # Point the parent graph to the new graph node
-    owner.outputs = [self if o is expr else o for o in owner.outputs]
-    return GraphExpression(type, owner, index, name)
+# def replace_expr(expr):
+#     type = expr.type
+#     owner = expr.owner
+#     index = expr.index
+#     if name is None:
+#         name = expr.name
+#     # Point the parent graph to the new graph node
+#     owner.outputs = [self if o is expr else o for o in owner.outputs]
+#     return GraphExpression(type, owner, index, name)
 
 
 #####################
