@@ -277,7 +277,7 @@ def _get_print_fn(file=sys.stdout):
     return _print_fn
 
 def print(x, message=None, printfn='print', message_prefix="SHIM - ",
-          file=sys.stdout):
+          file=sys.stdout, stop_on_name=True):
     """
     Non-Theano version outputs to the logger at the debug level.
 
@@ -301,6 +301,16 @@ def print(x, message=None, printfn='print', message_prefix="SHIM - ",
     file: file handle
         Where to print the value; default is 'sys.stdout'.
         Same argument as used in print() or theano.printing.debugprint.
+    stop_on_name: bool
+        This option only has an effect when using the 'debugprint' function;
+        it is passed on to `theano.printing.debugprint`. If True, the debug
+        graph terminates on named variables.
+        NOTE: There are two differences with theano’s plain `debugprint` function:
+        1) The default is switched from False to True. (To help tame long printouts
+        through recursive updates.)
+        2) If True and `x` already has a name, `debugprint` is called on the
+        inputs of `x` as well, again with `stop_on_name=True`.
+        (Since presumably the desire is to know what variables `x` depends on.)
     """
     if message is None:
         message = getattr(x, 'name', "")
@@ -319,7 +329,16 @@ def print(x, message=None, printfn='print', message_prefix="SHIM - ",
             return _gettheano().printing.Print(msg, global_fn=_get_print_fn(file))(x)
         elif printfn == 'debugprint':
             builtins.print(msg)
-            _gettheano().printing.debugprint(x, file=file)
+            done = {}  # Share the same node IDs between calls
+            _gettheano().printing.debugprint(x, file=file, stop_on_name=stop_on_name, done=done)
+            if stop_on_name and getattr(x, 'name', None) and x.owner is not None:
+                # Printing x on its own is not much help, so we also print the
+                # debugprint of its inputs (stopping on names).
+                # TODO? Instead of printing a message, add an indentation level with pipes ?
+                builtins.print("\nThe node was already named. Below is the debugprint "
+                               "of its inputs, up to the next named nodes.\n")
+                inps = x.owner.inputs
+                _gettheano().printing.debugprint(inps, file=file, stop_on_name=stop_on_name, done=done)
             return x
         elif printfn == 'eval':
             try:
@@ -373,8 +392,8 @@ def pprint(x):
     else:
         return str(x)
 
-def debugprint(x, file=sys.stdout):
-    return print(x, printfn='debugprint', message="", message_prefix="", file=file)
+def debugprint(x, file=sys.stdout, stop_on_name=True):
+    return print(x, printfn='debugprint', message="", message_prefix="", file=file, stop_on_name=stop_on_name)
 
 #######################
 # Assert equivalent
@@ -1846,6 +1865,10 @@ def ones(shape, dtype=None, symbolic=None):
     ":param:symbolic: Always return symbolic tensor, if symbolic lib is loaded."
     if config.library == 'numpy':
         symbolic = False
+    if isscalar(shape):
+        warn("For best compatibility with Theano, wrap scalar arguments to "
+             "`ones` with a tuple.")
+        scalar = (scalar,)
     if is_theano_object(shape) or symbolic:
         return T.ones(shape, dtype)
     else:
@@ -1907,6 +1930,10 @@ def zeros(shape, dtype=None, symbolic=None):
     ":param:symbolic: Always return symbolic tensor, if symbolic lib is loaded."
     if config.library == 'numpy':
         symbolic = False
+    if isscalar(shape):
+        warn("For best compatibility with Theano, wrap scalar arguments to "
+             "`zeros` with a tuple.")
+        scalar = (scalar,)
     if is_theano_object(shape) or symbolic:
         return T.zeros(shape, dtype)
     else:

@@ -2,6 +2,7 @@
 Shimmed Graph utilities:
    graph compilation, traversal, listing inputs...
 """
+import sys
 import collections
 from collections.abc import Iterable
 import itertools
@@ -82,14 +83,40 @@ get_TheanoGraphExpression.GE = None
 #####################
 # Graph compilation
 
-def compile(inputs, outputs, *args, **kwargs):
+def compile(inputs, outputs, *args, mode=None, **kwargs):
     """
     Use as theano.function().
     TODO: Something useful with non-symbolic output ?
+    
+    Parameters
+    ----------
+    ...
+    mode: In addition to the values accepted by `theano.function`, also accepts
+       a string to make it easier to use `NanGuardMode`.
+       If a string, a `NanGuardMode` object is created; the string should contain
+       comma separated values indicating against which values we want to guard.
+       For example, with the string ``"nan,inf"``, a `NanGuardMode` object is
+       created with the options ``NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=False)``.
     """
     if not any(core.is_theano_object(arg)
                for arg in itertools.chain([inputs, outputs], args, kwargs.values())):
         raise ValueError("`shim.graph.function()` is undefined for non-symbolic outputs")
+    if mode:
+        from theano.compile.nanguardmode import NanGuardMode
+        if isinstance(mode, NanGuardMode):
+            kwargs['mode'] = mode
+        elif isinstance(mode, str):
+            nanguard = 'nan' in mode
+            infguard = 'inf' in mode
+            bigguard = 'big' in mode
+            kwargs['mode'] = NanGuardMode(nan_is_error=nanguard, inf_is_error=infguard, big_is_error=bigguard)
+    # Replace dict by OrderedDict to silence Theano warnings – since 3.7, dicts
+    # now have guaranteed order
+    if sys.version_info.major >= 3 and sys.version_info.minor >= 7:
+        args = tuple(collections.OrderedDict(a) if type(a) is dict else a
+                     for a in args)
+        kwargs = {k: collections.OrderedDict(v) if type(v) is dict else v
+                  for k, v in kwargs.items()}
     return core.theano.function(inputs, outputs, *args, **kwargs)
 
 def _recursive_as_variable(exprs):
