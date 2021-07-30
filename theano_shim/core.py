@@ -1310,16 +1310,21 @@ class ShimmedTensorShared(np.ndarray):
 
     # Usual theano.shared interface
     def get_value(self, borrow=False, return_internal_type=False):
-        return self.view(np.ndarray)
-            # On values obtained by get_value, equality testing shold
-            # follow the usual rules for arrays, hence the view(np.ndarray)
+        # NB: On values obtained by get_value, equality testing shold
+        #     follow the usual rules for arrays, hence the view(np.ndarray)
+        if borrow:
+            return self.view(np.ndarray)
+        else:
+            # Emulating Theano, modifying the returned value should not modify
+            # the original when borrow=False
+            return self.copy().view(np.ndarray)
 
     def set_value(self, new_value, borrow=False):
         """
         If `allow_resize` is false (default), will raise an error if
         new_value has a different shape than the stored variable.
         """
-        new_value = np.asarray(new_value)
+        new_value = np.array(new_value, copy = not borrow)
         try:
             if self.shape != new_value.shape:
                 self.resize(new_value.shape, refcheck=False)
