@@ -4,7 +4,7 @@ Shimmed Graph utilities:
 """
 import sys
 import collections
-from collections.abc import Iterable
+from typing import Optional, Union, Iterable, Generator, Collection
 import itertools
 import builtins
 from . import core
@@ -221,7 +221,7 @@ def eval(expr, givens=None, max_cost=20, if_too_costly='raise'):
     else:
         list_of_exprs = [expr]
         # scalar_expr = True
-    cost = sum(1 for x in core.gettheano().graph.basic.ancestors(list_of_exprs)) / len(list_of_exprs)
+    cost = sum(1 for x in ancestors(list_of_exprs)) / len(list_of_exprs)
        # `sum(1 for…` is a way of computing len with a generator
        # We take the mean because if a user passes a list, they
        # expect computation to scale with the number of terms
@@ -327,13 +327,25 @@ def is_computable(varlist, with_inputs=None):
                 computable = False
                 break
     return computable
+    
+def ancestors(varlist: Union['Variable',Iterable['Variable']],
+              blockers: Optional[Collection['Variable']]=None) \
+-> Generator:
+    """
+    Wrapper for `theano.graph.basic.ancestors`.
+    Returns a generator listing the inputs to the variables in `varlist`.
+    Accepts also bare variables, nested lists and dictionaries; inputs will be
+    combined into one list.
+    """
+    varlist = [x for x in core._expand_args(varlist) if core.is_theano_object(x)]
+    return core._gettheano().graph.basic.ancestors(varlist, blockers=blockers)
 
 def graph_inputs(varlist, *args, **kwargs):
     """
-    Wrapper for theano.graph.basic.graph_inputs.
+    Wrapper for `theano.graph.basic.graph_inputs`.
     Returns an empty list for non symbolic variables
     Accepts also nested lists and dictionaries; inputs will be combined into
-    one set.
+    one list.
     """
     varlist = [x for x in core._expand_args(varlist) if core.is_theano_object(x)]
     return core._gettheano().graph.basic.graph_inputs(varlist, *args, **kwargs)
