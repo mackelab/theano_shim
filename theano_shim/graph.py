@@ -192,10 +192,12 @@ def eval(expr, givens=None, max_cost=20, if_too_costly='raise'):
         Cost is estimated by a proxy, specifically the number of ancestors to
         `expr` in the Theano graph. By default, only expressions with 20
         ancestors or less are evaluated.
-    if_too_costly: 'ignore'  |  'raise'
+    if_too_costly: 'ignore'  |  'raise' | 'warn'
         What to do if an expression is too costly to compute.
         'ignore': do nothing, return symbolic expression.
         'raise' : (default) raise a `~shim.graph.TooCostly` exception.
+        'warn'  : always evaluate (so functionally equivalent to `max_cost=None`)
+                  but print a warning if the max cost is exceeded.
 
     Returns
     -------
@@ -229,25 +231,32 @@ def eval(expr, givens=None, max_cost=20, if_too_costly='raise'):
     #     expr = expr[0]
     if max_cost is not None and cost > max_cost:
         if if_too_costly == 'raise':
-            raise TooCostly("Expression has {} ancestors, which exceeds the "
-                            "limit of {}.".format(cost, max_cost))
-        else:
+            raise TooCostly(f"Expression has {cost} ancestors, which exceeds "
+                            f"the limit of {max_cost}.")
+        elif if_too_costly == 'warn':
+            logger.warn(f"Expression has {cost} ancestors, which exceeds the "
+                        f"limit of {max_cost}. Evaluating anyway because "
+                        "`if_too_costly` is set to 'warn'.")
+            # Only branch which allows continuing to the end of the function
+        elif if_too_costly == 'ignore':
             return expr
-    else:
-        if givens is None: givens = {}
-        for k, v in givens.items():
-            givens[k] = core.cast(v, k.dtype)
-        try:
-            f = core.gettheano().function(
-                [], expr, givens=givens, on_unused_input='ignore')
-        except MissingInputError:
-            # Make the Theano error message more friendly and useful
-            symbinputs = (set(pure_symbolic_inputs(list_of_exprs)) - set(givens))
-            raise MissingInputError(
-                "You called `eval()` on a graph with pure symbolic inputs "
-                "(i.e. non-shared symbolic inputs). Provide values for these with "
-                f"the `givens` parameter.\nProblematic inputs: {symbinputs}.")
-        return f()
+        else:
+            raise ValueError("`if_too_costly` should be either 'raise', 'warn' "
+                             f"or 'ignore'. Received '{if_too_costly}'.")
+    if givens is None: givens = {}
+    for k, v in givens.items():
+        givens[k] = core.cast(v, k.dtype)
+    try:
+        f = core.gettheano().function(
+            [], expr, givens=givens, on_unused_input='ignore')
+    except MissingInputError:
+        # Make the Theano error message more friendly and useful
+        symbinputs = (set(pure_symbolic_inputs(list_of_exprs)) - set(givens))
+        raise MissingInputError(
+            "You called `eval()` on a graph with pure symbolic inputs "
+            "(i.e. non-shared symbolic inputs). Provide values for these with "
+            f"the `givens` parameter.\nProblematic inputs: {symbinputs}.")
+    return f()
 
 ######################
 # Graph inspection
