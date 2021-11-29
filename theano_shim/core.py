@@ -1805,6 +1805,16 @@ def dot(x, y):
         return T.dot(x, y)
     else:
         return np.dot(x, y)
+def erf(x):
+    if is_theano_object(x):
+        return T.erf(x)
+    else:
+        return sp.special.erf(x)
+def erfc(x):
+    if is_theano_object(x):
+        return T.erfc(x)
+    else:
+        return sp.special.erfc(x)
 def exp(x):
     if is_theano_object(x):
         return T.exp(x)
