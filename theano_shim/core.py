@@ -709,7 +709,7 @@ def asarray(x, dtype=None, broadcastable=None, symbolic=None):
         symbolic = _symbolic
     elif symbolic is False and _symbolic is True:
         raise ValueError("Cannot force a symbolic variable to be numeric.")
-    if (symbolic or broadcastable is not None) and not cf.use_theano:
+    if (symbolic or (broadcastable is not None)) and not cf.use_theano:
         raise TypeError("Attempting to create a symbolic array while "
                         "`shim.config.use_theano` is False.")
 
@@ -1182,8 +1182,36 @@ def shape_to_broadcast(shape):
     """
     return tuple(n==1 for n in shape)
 
-def constant(x, name=None, ndim=None, dtype=None):
-    if cf.use_theano:
+def constant(x, name=None, ndim=None, dtype=None, symbolic=None):
+    """
+    .. Note:: When Theano is loaded, the returned value is always symbolic.
+       This is consistent with the use of constant to add a symbolic wrapper
+       around numeric values.
+    
+    Parameters
+    ----------
+    x:
+    name:
+    ndim:
+    dtype:
+        Same arguments as `theano.constant()`
+    symbolic: bool | None (default: None)
+        Override automatic selection of numeric vs symbolic. Will raise an error
+        if this is not possible. This can happen when `x` is symbolic (and
+        `symbolic=False`) or Theano is not loaded (and `symbolic=True`).
+    """
+    _symbolic = 'theano' in sys.modules and isinstance(x, _gettheano().graph.basic.Variable)
+    if symbolic is None:
+        # NB: If `constant` is called, we can assume that the user desires
+        #     to wrap `x` as a symbolic, even if `x` is non-symbolic.
+        symbolic = 'theano' in sys.modules
+    elif symbolic is False and _symbolic is True:
+        raise ValueError("Cannot force a symbolic variable to be numeric.")
+    elif symbolic is True and not cf.use_theano:
+        raise TypeError("Attempting to create a symbolic variable while "
+                        "`shim.config.use_theano` is False.")
+        
+    if symbolic:
         return _getT().constant(x, name=name, ndim=ndim, dtype=dtype)
     else:
         x_ = np.dtype(dtype).type(x)
